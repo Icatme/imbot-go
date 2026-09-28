@@ -1286,6 +1286,13 @@ func TestRunNormalizesExpiredSessionAfterConcurrentRecovery(t *testing.T) {
 				})
 				return
 			}
+			// This test exercises expiry while the old handler is running.
+			// Polling may otherwise invalidate the session before it starts.
+			select {
+			case <-handlerStarted:
+			case <-r.Context().Done():
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ret": -14, "errmsg": "expired on poll"})
 		default:
 			http.NotFound(w, r)
@@ -1295,13 +1302,18 @@ func TestRunNormalizesExpiredSessionAfterConcurrentRecovery(t *testing.T) {
 
 	bot, _ := newAuthenticatedSessionTestBot(t, server.URL)
 	bot.client.HTTP = reauthenticationTestClient(server.Client().Transport, "fresh-token", "bot-1", server.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	bot.Handle(MessageHandlerFunc(func(context.Context, *IncomingMessage) MessageResult {
 		close(handlerStarted)
-		<-releaseHandler
+		select {
+		case <-releaseHandler:
+		case <-ctx.Done():
+		}
 		return AckMessage()
 	}))
 	runDone := make(chan error, 1)
-	go func() { runDone <- bot.Run(context.Background()) }()
+	go func() { runDone <- bot.Run(ctx) }()
 	waitForSignal(t, handlerStarted, "handler")
 	waitForCondition(t, "poll expiry transition", bot.ReauthRequired)
 	if _, err := bot.Reauthenticate(context.Background()); err != nil {
