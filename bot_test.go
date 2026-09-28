@@ -536,7 +536,7 @@ func TestToolCallMessageItemJSON(t *testing.T) {
 
 func TestWireMessageAgentCorrelationFields(t *testing.T) {
 	wire := WireMessage{
-		MessageID:    42,
+		MessageID:    "42",
 		UpdateTimeMs: 1700000001000,
 		DeleteTimeMs: 1700000002000,
 		SessionID:    "session-1",
@@ -657,7 +657,7 @@ func TestReplayKeys(t *testing.T) {
 		{
 			name: "all user message aliases",
 			wire: &WireMessage{
-				MessageID:   42,
+				MessageID:   "42",
 				ClientID:    "client-1",
 				Seq:         7,
 				FromUserID:  "user-1",
@@ -673,7 +673,7 @@ func TestReplayKeys(t *testing.T) {
 		{
 			name: "bot message uses recipient as peer",
 			wire: &WireMessage{
-				MessageID:   42,
+				MessageID:   "42",
 				FromUserID:  "bot-1",
 				ToUserID:    "user-1",
 				MessageType: MessageTypeBot,
@@ -686,7 +686,7 @@ func TestReplayKeys(t *testing.T) {
 		},
 		{
 			name: "missing peer",
-			wire: &WireMessage{MessageID: 42, MessageType: MessageTypeUser},
+			wire: &WireMessage{MessageID: "42", MessageType: MessageTypeUser},
 		},
 		{name: "nil message"},
 	}
@@ -707,7 +707,7 @@ func TestProcessUpdateBatchRejectsMalformedMessageWithoutAdvancingCursor(t *test
 	}
 
 	err := bot.processUpdateBatch(context.Background(), handler, updateBatch{
-		messages: []json.RawMessage{json.RawMessage(`{"message_id":"invalid"}`)},
+		messages: []json.RawMessage{json.RawMessage(`{"message_type":"invalid"}`)},
 		cursor:   "cursor-after",
 	})
 	if err == nil {
@@ -728,6 +728,7 @@ func TestRunRetriesMalformedMessageFromPersistedCursor(t *testing.T) {
 		ContextTokenPath: filepath.Join(dir, "context_tokens.json"),
 		CursorPath:       filepath.Join(dir, "cursor.json"),
 		ReplayPath:       filepath.Join(dir, "replay_dedupe.json"),
+		QuoteCache:       QuoteCacheOptions{Path: filepath.Join(dir, "quotes.json")},
 	}
 	seed := New(opts)
 	if err := seed.cursorStore.Set("cursor-before"); err != nil {
@@ -760,7 +761,7 @@ func TestRunRetriesMalformedMessageFromPersistedCursor(t *testing.T) {
 				firstCursor <- request.Cursor
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"ret":             0,
-					"msgs":            []json.RawMessage{json.RawMessage(`{"message_id":"invalid"}`)},
+					"msgs":            []json.RawMessage{json.RawMessage(`{"message_type":"invalid"}`)},
 					"get_updates_buf": "cursor-after",
 				})
 			default:
@@ -813,13 +814,13 @@ func TestProcessUpdateBatchScopesIdentityByPeer(t *testing.T) {
 	if err := bot.processUpdateBatch(context.Background(), handler, updateBatch{
 		messages: []json.RawMessage{
 			marshalWireMessage(t, WireMessage{
-				MessageID:   42,
+				MessageID:   "42",
 				FromUserID:  "user-1",
 				ToUserID:    "bot-1",
 				MessageType: MessageTypeUser,
 			}),
 			marshalWireMessage(t, WireMessage{
-				MessageID:   42,
+				MessageID:   "42",
 				FromUserID:  "user-2",
 				ToUserID:    "bot-1",
 				MessageType: MessageTypeUser,
@@ -852,7 +853,7 @@ func TestProcessUpdateBatchDeduplicatesAnyCommittedAlias(t *testing.T) {
 	})
 	messages := []WireMessage{
 		{
-			MessageID:   42,
+			MessageID:   "42",
 			ClientID:    "client-1",
 			Seq:         7,
 			FromUserID:  "user-1",
@@ -904,14 +905,14 @@ func TestProcessUpdateBatchPrefersMessageIDOverCollidingFallbackAliases(t *testi
 	})
 	messages := []WireMessage{
 		{
-			MessageID:   1,
+			MessageID:   "1",
 			ClientID:    "client-1",
 			Seq:         7,
 			FromUserID:  "user-1",
 			MessageType: MessageTypeUser,
 		},
 		{
-			MessageID:   2,
+			MessageID:   "2",
 			ClientID:    "client-1",
 			Seq:         7,
 			FromUserID:  "user-1",
@@ -961,7 +962,7 @@ func TestProcessUpdateBatchKeepsAtLeastOnceWithoutIdentityOrPeer(t *testing.T) {
 	})
 	messages := []WireMessage{
 		{FromUserID: "user-1", ToUserID: "bot-1", MessageType: MessageTypeUser},
-		{MessageID: 42, ToUserID: "bot-1", MessageType: MessageTypeUser},
+		{MessageID: "42", ToUserID: "bot-1", MessageType: MessageTypeUser},
 	}
 	for _, wire := range messages {
 		if keys := replayKeys(&wire); len(keys) != 0 {
@@ -984,7 +985,7 @@ func TestProcessUpdateBatchKeepsAtLeastOnceWithoutIdentityOrPeer(t *testing.T) {
 func TestRunContinuesPollingBeforeHandlerCompletes(t *testing.T) {
 	dir := t.TempDir()
 	raw := marshalWireMessage(t, WireMessage{
-		MessageID:    101,
+		MessageID:    "101",
 		FromUserID:   "user-1",
 		ToUserID:     "bot-1",
 		MessageType:  MessageTypeUser,
@@ -1035,6 +1036,7 @@ func TestRunContinuesPollingBeforeHandlerCompletes(t *testing.T) {
 		ContextTokenPath: filepath.Join(dir, "context_tokens.json"),
 		CursorPath:       filepath.Join(dir, "cursor.json"),
 		ReplayPath:       filepath.Join(dir, "replay_dedupe.json"),
+		QuoteCache:       QuoteCacheOptions{Path: filepath.Join(dir, "quotes.json")},
 	})
 	bot.client.HTTP = server.Client()
 	bot.creds = &auth.Credentials{BaseURL: server.URL, Token: "token", AccountID: "bot-1"}
@@ -1129,6 +1131,7 @@ func newReplayTestBot(t *testing.T) *Bot {
 		ContextTokenPath: filepath.Join(dir, "context_tokens.json"),
 		CursorPath:       filepath.Join(dir, "cursor.json"),
 		ReplayPath:       filepath.Join(dir, "replay_dedupe.json"),
+		QuoteCache:       QuoteCacheOptions{Path: filepath.Join(dir, "quotes.json")},
 	})
 	if err := bot.replayStore.Load(); err != nil {
 		t.Fatal(err)

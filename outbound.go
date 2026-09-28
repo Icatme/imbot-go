@@ -22,8 +22,9 @@ type OutboundMessage struct {
 // SendResult identifies the outbound request. It is returned even when the
 // transport fails so callers can retry with the same ClientID.
 type SendResult struct {
-	ClientID string
-	RunID    string
+	ClientID  string
+	RunID     string
+	MessageID MessageID // empty when the server omitted a receipt or the send failed
 }
 
 // SendRequest is passed to BeforeSend after ClientID generation and before the
@@ -140,7 +141,8 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 	if err := requireContextToken(userID, contextToken); err != nil {
 		return SendResult{}, err
 	}
-	if _, err := b.readySession(sessionGeneration); err != nil {
+	creds, err := b.readySession(sessionGeneration)
+	if err != nil {
 		return SendResult{}, err
 	}
 	if msg.ClientID == "" {
@@ -177,13 +179,20 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 		request.Message.RunID,
 		request.Message.Item,
 	)
-	token, sendErr := b.authenticatedRequest(ctx, sessionGeneration, func(requestContext context.Context, baseURL, token string) error {
+	receipt, token, sendErr := authenticatedRequestResult(b, ctx, sessionGeneration, func(requestContext context.Context, baseURL, token string) (*protocol.SendMessageResponse, error) {
 		return b.client.SendMessage(requestContext, baseURL, token, wire)
 	})
 	if token == "" {
 		return result, sendErr
 	}
 	sendErr = b.handleAuthenticatedErrorForSession(sessionGeneration, token, sendErr)
+	if sendErr == nil && receipt != nil {
+		result.MessageID = receipt.MessageID
+		// Cache exactly the post-hook, normalized text that was accepted. Cache
+		// failures are reported separately: returning a send error here could
+		// cause a caller to deliver the already accepted message again.
+		b.cacheQuote(creds.AccountID, request.UserID, receipt.MessageID, quoteText([]MessageItem{request.Message.Item}))
+	}
 	outcome := SendOutcome{Request: request, Result: result, Err: sendErr}
 	if hookErr := b.hooks.AfterSend.Run(outcome); hookErr != nil {
 		b.reportError(fmt.Errorf("AfterSend hook failed: %w", hookErr))

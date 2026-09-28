@@ -16,8 +16,8 @@ import (
 )
 
 func TestChannelVersionBumped(t *testing.T) {
-	if ChannelVersion != "0.4.2" {
-		t.Fatalf("expected ChannelVersion 0.4.2, got %s", ChannelVersion)
+	if ChannelVersion != "0.5.0" {
+		t.Fatalf("expected ChannelVersion 0.5.0, got %s", ChannelVersion)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestSendMessageEmptyResponseReturnsError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	err := NewClient().SendMessage(context.Background(), ts.URL, "tok", map[string]interface{}{})
+	_, err := NewClient().SendMessage(context.Background(), ts.URL, "tok", map[string]interface{}{})
 	if err == nil || !strings.Contains(err.Error(), "decode response") {
 		t.Fatalf("expected decode response error, got %v", err)
 	}
@@ -153,7 +153,7 @@ func TestAPIErrorPreservesResponseDimensions(t *testing.T) {
 			}))
 			defer server.Close()
 
-			err := NewClient().SendMessage(context.Background(), server.URL, "token", map[string]interface{}{})
+			_, err := NewClient().SendMessage(context.Background(), server.URL, "token", map[string]interface{}{})
 			var apiErr *APIError
 			if !errors.As(fmt.Errorf("wrapped: %w", err), &apiErr) {
 				t.Fatalf("expected wrapped APIError, got %T: %v", err, err)
@@ -178,7 +178,7 @@ func TestAPIErrorRedactsSensitiveResponseBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewClient().SendMessage(context.Background(), server.URL, "request-token", map[string]interface{}{})
+	_, err := NewClient().SendMessage(context.Background(), server.URL, "request-token", map[string]interface{}{})
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected APIError, got %T: %v", err, err)
@@ -222,7 +222,7 @@ func TestAPIErrorRawFallbackIsBoundedUTF8(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewClient().SendMessage(context.Background(), server.URL, "request-token", map[string]interface{}{})
+	_, err := NewClient().SendMessage(context.Background(), server.URL, "request-token", map[string]interface{}{})
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected APIError, got %T: %v", err, err)

@@ -4,7 +4,16 @@
 // typing indicators, context_token management, and AES-128-ECB CDN crypto.
 package wechatbot
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/Icatme/wechatbot-go/internal/protocol"
+)
+
+// MessageID is a lossless server identifier. Both string and uint64 JSON
+// values are accepted; JSON output uses strings. Empty and zero mean absent.
+type MessageID = protocol.MessageID
 
 // MessageType indicates who sent the message.
 type MessageType int
@@ -107,6 +116,30 @@ type VideoItem struct {
 type RefMessage struct {
 	Title       string       `json:"title,omitempty"`
 	MessageItem *MessageItem `json:"message_item,omitempty"`
+	ServerID    MessageID    `json:"svr_id,omitempty"`
+	PartialText *PartialText `json:"partial_text,omitempty"`
+}
+
+// PartialText selects occurrences of start/end markers in the original text.
+// Indexes count non-overlapping occurrences, not character positions.
+type PartialText struct {
+	Start      string `json:"start"`
+	End        string `json:"end"`
+	StartIndex int    `json:"startindex"`
+	EndIndex   int    `json:"endindex"`
+	QuoteMD5   string `json:"quotemd5,omitempty"`
+}
+
+// UnmarshalJSON keeps absent/null occurrence indexes invalid rather than
+// silently selecting the first occurrence (index zero).
+func (p *PartialText) UnmarshalJSON(data []byte) error {
+	type plain PartialText
+	value := plain{StartIndex: -1, EndIndex: -1}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*p = PartialText(value)
+	return nil
 }
 
 // ToolCallStartItem identifies a tool invocation that has started.
@@ -128,7 +161,7 @@ type MessageItem struct {
 	CreateTimeMs       int64               `json:"create_time_ms,omitempty"`
 	UpdateTimeMs       int64               `json:"update_time_ms,omitempty"`
 	IsCompleted        *bool               `json:"is_completed,omitempty"`
-	MsgID              string              `json:"msg_id,omitempty"`
+	MsgID              MessageID           `json:"msg_id,omitempty"`
 	TextItem           *TextItem           `json:"text_item,omitempty"`
 	ImageItem          *ImageItem          `json:"image_item,omitempty"`
 	VoiceItem          *VoiceItem          `json:"voice_item,omitempty"`
@@ -142,7 +175,7 @@ type MessageItem struct {
 // WireMessage is the raw message from the iLink API.
 type WireMessage struct {
 	Seq          int64         `json:"seq,omitempty"`
-	MessageID    int64         `json:"message_id,omitempty"`
+	MessageID    MessageID     `json:"message_id,omitempty"`
 	FromUserID   string        `json:"from_user_id"`
 	ToUserID     string        `json:"to_user_id"`
 	ClientID     string        `json:"client_id"`
@@ -228,9 +261,12 @@ type VideoContent struct {
 
 // QuotedMessage represents a referenced message.
 type QuotedMessage struct {
-	Title string
-	Text  string
-	Type  ContentType
+	Title       string
+	Text        string
+	Type        ContentType
+	MessageID   MessageID
+	PartialText *PartialText
+	Resolution  QuoteResolution
 }
 
 // DownloadedMedia is the result of downloading media from a message.

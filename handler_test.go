@@ -81,10 +81,10 @@ func TestBatchRetryReplaysOnlyUncommittedMessages(t *testing.T) {
 	var secondCalls atomic.Int32
 	firstAttempt := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
 		switch msg.Raw.MessageID {
-		case 201:
+		case "201":
 			firstCalls.Add(1)
 			return AckMessage()
-		case 202:
+		case "202":
 			secondCalls.Add(1)
 			return RetryMessage(retryErr)
 		default:
@@ -114,9 +114,9 @@ func TestBatchRetryReplaysOnlyUncommittedMessages(t *testing.T) {
 
 	secondAttempt := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
 		switch msg.Raw.MessageID {
-		case 201:
+		case "201":
 			firstCalls.Add(1)
-		case 202:
+		case "202":
 			secondCalls.Add(1)
 		}
 		return AckMessage()
@@ -426,7 +426,7 @@ func newHandlerTestBot(t *testing.T) *Bot {
 func handlerTestBatch(t *testing.T, messageID int64, cursor string) updateBatch {
 	t.Helper()
 	raw := marshalWireMessage(t, WireMessage{
-		MessageID:    messageID,
+		MessageID:    MessageID(fmt.Sprint(messageID)),
 		FromUserID:   "user-1",
 		ToUserID:     "bot-1",
 		MessageType:  MessageTypeUser,
@@ -441,7 +441,7 @@ func handlerTestBatch(t *testing.T, messageID int64, cursor string) updateBatch 
 
 func handlerReplayKey(messageID int64) string {
 	return replayKeys(&WireMessage{
-		MessageID:   messageID,
+		MessageID:   MessageID(fmt.Sprint(messageID)),
 		FromUserID:  "user-1",
 		MessageType: MessageTypeUser,
 	})[0]

@@ -22,7 +22,7 @@ import (
 
 const (
 	DefaultBaseURL          = "https://ilinkai.weixin.qq.com"
-	ChannelVersion          = "0.4.2"
+	ChannelVersion          = "0.5.0"
 	maxAPIErrorMessageBytes = 4 * 1024
 	// iLink-App-Id header value.
 	iLinkAppID = "bot"
@@ -329,14 +329,26 @@ func (c *Client) GetUpdates(ctx context.Context, baseURL, token, cursor string, 
 	return &result, nil
 }
 
-// SendMessage sends a message through the iLink API.
-func (c *Client) SendMessage(ctx context.Context, baseURL, token string, msg interface{}) error {
+// SendMessageResponse carries the server identity of an accepted message.
+type SendMessageResponse struct {
+	MessageID MessageID `json:"message_id,omitempty"`
+}
+
+// SendMessage sends a message through the iLink API and preserves its receipt.
+func (c *Client) SendMessage(ctx context.Context, baseURL, token string, msg interface{}) (*SendMessageResponse, error) {
 	body := map[string]interface{}{
 		"msg":       msg,
 		"base_info": c.baseInfo(),
 	}
-	_, err := c.apiPost(ctx, baseURL, "/ilink/bot/sendmessage", token, body, 15*time.Second)
-	return err
+	raw, err := c.apiPost(ctx, baseURL, "/ilink/bot/sendmessage", token, body, 15*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	var result SendMessageResponse
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("sendmessage decode receipt: %w", err)
+	}
+	return &result, nil
 }
 
 // GetConfig gets the typing ticket for a user.

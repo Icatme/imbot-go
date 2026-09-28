@@ -19,13 +19,14 @@ type Options struct {
 	CredPath              string
 	ContextTokenPath      string
 	CursorPath            string
-	ReplayPath            string // optional persistent replay-dedupe state path
-	BotAgent              string // UA-style, e.g. "MyBot/1.2.0"
-	RouteTag              string // sent as SKRouteTag header
-	StripMarkdown         bool   // strip markdown from outbound text
-	NotifyErrors          bool   // automatically notify user on send failure
-	LogLevel              string // "debug", "info", "warn", "error", "silent"
-	MaxConcurrentHandlers int    // maximum concurrent conversations; defaults to 4 and caps at 256
+	ReplayPath            string            // optional persistent replay-dedupe state path
+	QuoteCache            QuoteCacheOptions // bounded text history for ID-only references
+	BotAgent              string            // UA-style, e.g. "MyBot/1.2.0"
+	RouteTag              string            // sent as SKRouteTag header
+	StripMarkdown         bool              // strip markdown from outbound text
+	NotifyErrors          bool              // automatically notify user on send failure
+	LogLevel              string            // "debug", "info", "warn", "error", "silent"
+	MaxConcurrentHandlers int               // maximum concurrent conversations; defaults to 4 and caps at 256
 	Logger                *botlog.Logger
 	OnQRURL               func(url string)
 	OnScanned             func()
@@ -50,6 +51,7 @@ type Bot struct {
 	contextTokens      *store.ContextStore
 	cursorStore        *store.CursorStore
 	replayStore        *store.ReplayStore
+	quoteStore         *store.QuoteStore
 	reauthStore        reauthPersistence
 	running            bool
 	mu                 sync.Mutex
@@ -94,6 +96,14 @@ func New(opts ...Options) *Bot {
 	if reauthCredentialPath == "" {
 		reauthCredentialPath = auth.DefaultCredPath()
 	}
+	var quoteStore *store.QuoteStore
+	if !o.QuoteCache.Disabled {
+		quotePath := o.QuoteCache.Path
+		if quotePath == "" {
+			quotePath = reauthCredentialPath + ".quotes.json"
+		}
+		quoteStore = store.NewQuoteStore(quotePath, o.QuoteCache.Retention, o.QuoteCache.MaxMessages)
+	}
 	client := protocol.NewClient()
 	client.BotAgent = protocol.SanitizeBotAgent(o.BotAgent)
 	client.RouteTag = o.RouteTag
@@ -111,6 +121,7 @@ func New(opts ...Options) *Bot {
 		contextTokens: store.NewContextStore(o.AccountID, o.ContextTokenPath),
 		cursorStore:   store.NewCursorStore(o.AccountID, o.CursorPath),
 		replayStore:   store.NewReplayStore(o.AccountID, o.ReplayPath, store.DefaultReplayTTL),
+		quoteStore:    quoteStore,
 		reauthStore:   store.NewReauthStore(store.ReauthStatePath(reauthCredentialPath)),
 		hooks:         LifecycleHooks{},
 		logger:        logger,

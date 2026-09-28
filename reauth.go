@@ -397,6 +397,9 @@ func (b *Bot) validateStatePaths(contextTokens *store.ContextStore, cursorStore 
 		{name: "cursor", path: cursorStore.Path()},
 		{name: "replay deduplication", path: replayStore.Path()},
 	}
+	if b.quoteStore != nil {
+		paths = append(paths, struct{ name, path string }{"quote cache", b.quoteStore.Path()})
+	}
 	seen := make(map[string]string, len(paths))
 	for _, entry := range paths {
 		path := canonicalStatePath(entry.path)
@@ -415,6 +418,9 @@ func (b *Bot) validateReauthenticationContextPaths(paths []string, cursorStore *
 		statePathKey(b.reauthStore.Path()): "reauthentication marker",
 		statePathKey(cursorStore.Path()):   "cursor",
 		statePathKey(replayStore.Path()):   "replay deduplication",
+	}
+	if b.quoteStore != nil {
+		protected[statePathKey(b.quoteStore.Path())] = "quote cache"
 	}
 	for _, path := range canonicalContextPaths(paths...) {
 		if name, ok := protected[statePathKey(path)]; ok {

@@ -32,7 +32,7 @@ Authorization: Bearer <bot_token>
 X-WECHAT-UIN: <base64(String(randomUint32))>
 ```
 
-All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.4.2`.
+All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.5.0`.
 
 ## Get Updates (Long Poll)
 
@@ -65,10 +65,72 @@ Body: {
 ```
 
 `SendMessage` / `ReplyMessage` each send exactly one item and return the effective
-`client_id` and `run_id`. A caller-supplied `client_id` is preserved; when the SDK
+`client_id`, `run_id`, and the server-assigned `message_id` when present.
+A caller-supplied `client_id` is preserved; when the SDK
 generates one, it is returned even if the HTTP attempt fails so an explicit retry
 can reuse the same identity. Text chunking and media captions use the convenience
 APIs and may produce multiple independent requests.
+
+Successful responses may contain `{"ret":0,"message_id":18446744073709551615}`.
+The receipt is exposed as `SendResult.MessageID` and in `AfterSend`; an absent ID
+does not turn a successful send into a failure. Both `ret` and `errcode` are
+checked before accepting a receipt.
+
+## Message IDs and References
+
+`message_id`, item `msg_id`, and reference `svr_id` accept unsigned 64-bit JSON
+numbers or opaque JSON strings. The Go `MessageID` type stores them as strings
+and marshals strings, without a floating-point conversion. Missing/null/zero
+IDs decode as empty. Negative, fractional, or out-of-range numeric IDs fail
+decoding; malformed messages still stop delivery without committing the cursor.
+
+Newer clients may omit `ref_msg.message_item` and send only an ID:
+
+```json
+{
+  "type": 1,
+  "text_item": {"text": "What does this part mean?"},
+  "ref_msg": {
+    "svr_id": "18446744073709551615",
+    "partial_text": {
+      "start": "start marker",
+      "end": "end marker",
+      "startindex": 0,
+      "endindex": 1,
+      "quotemd5": "<MD5 of selected UTF-8 text>"
+    }
+  }
+}
+```
+
+The SDK stores incoming text and accepted outgoing text under the authenticated
+account, remote peer, and server ID. It resolves references before `AfterReceive`
+and the Handler, preserving the original wire message. Outbound cache entries
+use the final post-hook/normalized text and the server receipt, not `client_id`.
+Context tokens, media URLs, keys, and media bytes are not part of the quote cache.
+
+For incoming history, prefer the top-level `message_id`; if absent, use the first
+nonempty/nonzero item `msg_id`. References prefer `svr_id`, then the nested
+`message_item.msg_id`. Complete inline text, titles, and media information remain
+authoritative; an item carrying only a type/ID is a placeholder, so it queries
+the cache and reports `missing` when no record exists.
+
+Partial indexes count non-overlapping occurrences of the boundary markers,
+including both markers in the selected text. Global indexes apply without a
+hash. When `quotemd5` is present, it validates the UTF-8 substring and can also
+disambiguate the observed end-index variant relative to the selected start.
+Missing/null/negative indexes or a hash mismatch never produce guessed text.
+`QuotedMessage.Resolution` distinguishes embedded/cached content, missing history,
+disabled/unavailable storage, and invalid partial references.
+
+Cache errors are reported as `*QuoteCacheError` through error callbacks and do
+not change delivery outcomes or advance/roll back cursor and replay state.
+Storage/configuration limits and migration details are in the [README](../README.md).
+Only text (including voice transcription) is restored; ID-only media references
+remain unresolved in this implementation.
+
+Upstream reference: [Tencent/openclaw-weixin PR #296](https://github.com/Tencent/openclaw-weixin/pull/296)
+and its [partial-quote implementation](https://github.com/Tencent/openclaw-weixin/blob/a9ff7932d588d48a8a2b08c715fbefe4549ffcf6/src/messaging/partial-quote.ts).
 
 ## Send Typing
 

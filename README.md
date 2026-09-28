@@ -18,7 +18,51 @@ go get github.com/Icatme/wechatbot-go
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近更新（v0.4.2）
+## 最近发布（v0.5.0）：消息 ID 与文本引用
+
+- `message_id`、`msg_id` 和引用中的 `svr_id` 支持 JSON 字符串与完整 `uint64` 数值，避免大 ID 导致解码失败。
+- `SendMessage` / `ReplyMessage` 的 `SendResult.MessageID` 与 `AfterSend` 回调保留服务端消息 ID；服务端未返回时为空。
+- 新版微信只携带 `svr_id` 时，从本地历史还原文本引用；支持 `partial_text` 的局部引用及 MD5 校验。
+- 收取时优先使用顶层 `message_id`，缺失时使用消息项中的首个有效 `msg_id`；引用时优先使用 `svr_id`，缺失时读取 `message_item.msg_id`。只有 ID 的引用占位项会查询缓存，未命中时返回 `missing`。
+- 文本引用缓存默认开启，按登录账号和对端用户隔离，重启后仍可使用。缓存错误通过 `*QuoteCacheError` 上报，不将已成功发送的消息改判为发送失败。
+
+**调用方迁移：** `WireMessage.MessageID` 从 `int64` 改为字符串底层类型 `MessageID`，`MessageItem.MsgID` 也使用这个类型。
+使用字符串字面量构造/比较 ID；从整数转换时先用 `strconv.FormatUint` / `strconv.FormatInt`，再转为 `wechatbot.MessageID`，不要直接把整数转换为字符串类型。
+缺失和 JSON 零值 ID 统一为空字符串；JSON 序列化输出字符串。现有非零数字消息的 replay 键保持不变。
+
+### 引用缓存配置
+
+```go
+bot := wechatbot.New(wechatbot.Options{
+    QuoteCache: wechatbot.QuoteCacheOptions{
+        Path:        "./state/quotes.json", // 默认：实际凭证文件路径 + ".quotes.json"
+        Retention:   30 * 24 * time.Hour,
+        MaxMessages: 10000, // 每账号
+    },
+})
+```
+
+设置 `QuoteCache.Disabled = true` 可关闭缓存。缓存保存收发正文及语音转写文本，不保存认证信息或媒体文件。
+每条正文最多 64 KiB，整个文件内的正文和身份字段合计最多 16 MiB；超出容量优先淘汰旧记录。
+默认 30 天后不再命中，后续写入时清理过期磁盘记录。一个缓存文件只能由一个 Bot/进程写入；配置路径不得与其他状态文件重合。
+
+`IncomingMessage.QuotedMessage` 包含原 `MessageID`、`PartialText` 和 `Resolution`：
+
+| Resolution | 含义 |
+|---|---|
+| `embedded` / `cached` | 来自消息内嵌内容 / 本地缓存；局部引用校验成功时 `Text` 为选中片段 |
+| `missing` | 历史记录缺失或已过期，未还原正文 |
+| `disabled` / `unavailable` | 缓存关闭 / 不可用 |
+| `invalid_partial` | 局部引用索引或 MD5 无法验证，`Text` 为空 |
+
+缓存损坏会保留原文件并上报错误，当前 Bot 不会改用内存缓存或自动覆盖；修复文件后重新创建 Bot。
+缓存启用前的历史消息和仅凭 ID 引用的媒体附件无法还原。缓存不参与 Ack / Retry / Drop 和 cursor 提交判定。
+
+完整说明见 [v0.5.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.5.0)。
+
+## 历史版本
+
+### v0.4.2
 
 `v0.4.2` 为微信消息长轮询的客户端超时保留网络传输余量：请求至少等待 65 秒，且比服务端建议的轮询时间多 15 秒，避免正常长轮询在边界处误报超时。SDK 的 HTTP 总超时为 2 分钟。
 

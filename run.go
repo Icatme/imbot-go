@@ -291,6 +291,8 @@ func (b *Bot) processWireMessage(ctx context.Context, handler MessageHandler, se
 	}
 	incoming := b.parseMessage(wire)
 	if incoming != nil {
+		b.resolveQuote(sessionGeneration, wire, incoming)
+		b.cacheInboundQuote(sessionGeneration, wire)
 		incoming.sessionGeneration = sessionGeneration
 		incoming.sessionBound = true
 		if err := b.hooks.AfterReceive.Run(incoming); err != nil {
@@ -321,8 +323,8 @@ func replayKeys(wire *WireMessage) []string {
 
 	prefix := "peer:" + strconv.Itoa(len(peer)) + ":" + peer + ":"
 	keys := make([]string, 0, 3)
-	if wire.MessageID != 0 {
-		keys = append(keys, prefix+"message:"+strconv.FormatInt(wire.MessageID, 10))
+	if wire.MessageID != "" && wire.MessageID != "0" {
+		keys = append(keys, prefix+"message:"+string(wire.MessageID))
 	}
 	if wire.ClientID != "" {
 		keys = append(keys, prefix+"client:"+wire.ClientID)

@@ -60,7 +60,7 @@ All SDKs implement the same flow:
 1. `POST /getupdates` with cursor (35s server hold)
 2. Decode each batch into bounded keyed work
 3. Serialize each user's token persistence and delivery while handling unrelated users concurrently
-4. Run `AfterReceive`, middleware, and the configured handler
+4. Resolve text references from account/peer-scoped quote history, cache the received text, then run `AfterReceive`, middleware, and the configured handler
 5. Commit each replay identity after Ack/Drop, then advance the global cursor only through the contiguous completed-batch prefix
 6. On `-14` error → persist a fail-closed marker, clear invalid credentials/context, and require explicit reauthentication; preserve cursor/replay, then remove the marker only after a validated same-account credential and empty context state are durable and before publishing the fresh session
 7. On network error → exponential backoff (1s → 10s max)
@@ -142,6 +142,7 @@ wechatbot-go/
 ├── outbound.go             # Stable outbound identity and send hooks
 ├── media.go                # CDN upload and download
 ├── message.go              # Inbound message parsing
+├── quote.go                # Text reference resolution, partial-quote validation, cache options
 ├── handler.go              # Handler and middleware pipeline
 ├── reauth.go               # Fail-closed reauthentication state machine
 ├── logging.go              # Logger adapters and error reporting
@@ -154,7 +155,7 @@ wechatbot-go/
 │   ├── auth/               # QR login and credentials
 │   ├── config/             # Typing-ticket cache
 │   ├── crypto/             # AES-128-ECB
-│   ├── store/              # Durable context, cursor, replay, and reauth state
+│   ├── store/              # Durable context, cursor, replay, reauth state, and bounded quote snapshots
 │   └── ...                 # Remote media, persistence, markdown, thumbnails
 ├── log/                    # Structured logging package
 └── examples/

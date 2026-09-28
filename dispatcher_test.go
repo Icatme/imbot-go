@@ -40,13 +40,13 @@ func TestKeyedDispatcherSerializesConversationAcrossBatches(t *testing.T) {
 	releaseSecond := make(chan struct{})
 	handler := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
 		switch msg.Raw.MessageID {
-		case 301:
+		case "301":
 			close(firstStarted)
 			<-releaseFirst
-		case 302:
+		case "302":
 			close(secondStarted)
 			<-releaseSecond
-		case 303:
+		case "303":
 			close(thirdStarted)
 		}
 		return AckMessage()
@@ -142,7 +142,7 @@ func TestMalformedMessageFailsDispatcherWithoutAdvancingCursor(t *testing.T) {
 	}), 1)
 
 	err := dispatcher.submit(updateBatch{
-		messages: []json.RawMessage{json.RawMessage(`{"message_id":"invalid"}`)},
+		messages: []json.RawMessage{json.RawMessage(`{"message_type":"invalid"}`)},
 		cursor:   "cursor-after",
 	})
 	var typeErr *json.UnmarshalTypeError
@@ -230,7 +230,7 @@ func TestCursorWaitsForContiguousCompletedBatchPrefix(t *testing.T) {
 	releaseFirst := make(chan struct{})
 	secondHandled := make(chan struct{})
 	handler := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
-		if msg.Raw.MessageID == 321 {
+		if msg.Raw.MessageID == "321" {
 			<-releaseFirst
 		} else {
 			close(secondHandled)
@@ -265,7 +265,7 @@ func TestLaterAckCommitsReplayButNotCursorAfterEarlierRetry(t *testing.T) {
 	retryErr := errors.New("retry first batch")
 	releaseFirst := make(chan struct{})
 	handler := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
-		if msg.Raw.MessageID == 331 {
+		if msg.Raw.MessageID == "331" {
 			<-releaseFirst
 			return RetryMessage(retryErr)
 		}
@@ -329,7 +329,7 @@ func TestRetryCancelsQueuedConversationWork(t *testing.T) {
 	release := make(chan struct{})
 	var secondCalled atomic.Bool
 	handler := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
-		if msg.Raw.MessageID == 351 {
+		if msg.Raw.MessageID == "351" {
 			<-release
 			return RetryMessage(retryErr)
 		}
@@ -361,7 +361,7 @@ func TestDispatcherCancellationUnblocksQueuedWork(t *testing.T) {
 		releaseFirst := make(chan struct{})
 		var secondCalled atomic.Bool
 		handler := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
-			if msg.Raw.MessageID == 371 {
+			if msg.Raw.MessageID == "371" {
 				close(firstStarted)
 				<-releaseFirst
 			} else {
@@ -402,7 +402,7 @@ func TestDispatcherCancellationUnblocksQueuedWork(t *testing.T) {
 		releaseFirst := make(chan struct{})
 		var secondCalled atomic.Bool
 		handler := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
-			if msg.Raw.MessageID == 381 {
+			if msg.Raw.MessageID == "381" {
 				close(firstStarted)
 				<-releaseFirst
 			} else {
@@ -495,7 +495,7 @@ func TestDispatcherBoundsUncommittedBatchFrontier(t *testing.T) {
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	handler := MessageHandlerFunc(func(_ context.Context, msg *IncomingMessage) MessageResult {
-		if msg.Raw.MessageID == 410 {
+		if msg.Raw.MessageID == "410" {
 			close(firstStarted)
 			<-releaseFirst
 		}
@@ -623,7 +623,7 @@ func newDispatcherTestBot(t *testing.T) *Bot {
 func dispatcherTestBatch(t *testing.T, messageID int64, userID, cursor string) updateBatch {
 	t.Helper()
 	raw := marshalWireMessage(t, WireMessage{
-		MessageID:    messageID,
+		MessageID:    MessageID(fmt.Sprint(messageID)),
 		FromUserID:   userID,
 		ToUserID:     "bot-1",
 		MessageType:  MessageTypeUser,
@@ -638,7 +638,7 @@ func dispatcherTestBatch(t *testing.T, messageID int64, userID, cursor string) u
 
 func dispatcherReplayKey(messageID int64, userID string) string {
 	return replayKeys(&WireMessage{
-		MessageID:   messageID,
+		MessageID:   MessageID(fmt.Sprint(messageID)),
 		FromUserID:  userID,
 		MessageType: MessageTypeUser,
 	})[0]

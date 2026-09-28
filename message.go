@@ -69,11 +69,19 @@ func (b *Bot) parseMessage(wire *WireMessage) *IncomingMessage {
 			})
 		}
 		if item.RefMsg != nil {
-			q := &QuotedMessage{Title: item.RefMsg.Title}
+			q := &QuotedMessage{Title: item.RefMsg.Title, MessageID: quoteReferenceID(item.RefMsg), Resolution: QuoteMissing}
+			if strings.TrimSpace(q.Title) != "" {
+				q.Resolution = QuoteEmbedded
+			}
+			if item.RefMsg.PartialText != nil {
+				partial := *item.RefMsg.PartialText
+				q.PartialText = &partial
+			}
 			if item.RefMsg.MessageItem != nil {
 				q.Type = detectType([]MessageItem{*item.RefMsg.MessageItem})
-				if item.RefMsg.MessageItem.TextItem != nil {
-					q.Text = item.RefMsg.MessageItem.TextItem.Text
+				q.Text = quoteText([]MessageItem{*item.RefMsg.MessageItem})
+				if q.Text != "" || hasInlineQuoteMedia(item.RefMsg.MessageItem) {
+					q.Resolution = QuoteEmbedded
 				}
 			}
 			msg.QuotedMessage = q

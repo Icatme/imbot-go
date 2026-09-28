@@ -174,7 +174,7 @@ func TestRunPreservesHandlerRetryWhenSendTriggersReauthentication(t *testing.T) 
 	releaseUpdates := make(chan struct{})
 	var polls atomic.Int32
 	raw := marshalWireMessage(t, WireMessage{
-		MessageID:    101,
+		MessageID:    "101",
 		FromUserID:   "user-1",
 		ToUserID:     "bot-1",
 		MessageType:  MessageTypeUser,
@@ -764,7 +764,7 @@ func TestQueuedOldDeliveryStopsBeforeReplayLookupOrHandler(t *testing.T) {
 		t.Fatalf("Reauthenticate: %v", err)
 	}
 	wire := &WireMessage{
-		MessageID:    601,
+		MessageID:    "601",
 		FromUserID:   "user-1",
 		MessageType:  MessageTypeUser,
 		MessageState: MessageStateFinish,
@@ -1113,7 +1113,7 @@ func TestOldRunNeverNotifiesStopWithFreshCredentials(t *testing.T) {
 	var sendTokens []string
 	var polls atomic.Int32
 	raw := marshalWireMessage(t, WireMessage{
-		MessageID:    501,
+		MessageID:    "501",
 		FromUserID:   "user-1",
 		ToUserID:     "bot-1",
 		MessageType:  MessageTypeUser,
@@ -1265,7 +1265,7 @@ func TestRunNormalizesExpiredSessionAfterConcurrentRecovery(t *testing.T) {
 	releaseHandler := make(chan struct{})
 	var polls atomic.Int32
 	raw := marshalWireMessage(t, WireMessage{
-		MessageID:    701,
+		MessageID:    "701",
 		FromUserID:   "user-1",
 		ToUserID:     "bot-1",
 		MessageType:  MessageTypeUser,
@@ -1833,7 +1833,7 @@ func isExpectedOldRequestResult(err error) bool {
 
 func reauthReplayKey(messageID int64, userID string) string {
 	return replayKeys(&WireMessage{
-		MessageID:   messageID,
+		MessageID:   MessageID(fmt.Sprint(messageID)),
 		FromUserID:  userID,
 		MessageType: MessageTypeUser,
 	})[0]

@@ -25,6 +25,15 @@ var (
 // endpoint, HTTP status, ret, and errcode dimensions.
 type APIError = protocol.APIError
 
+// QuoteCacheError reports optional history IO/configuration failures through
+// OnError. It does not mean message delivery failed and must not trigger a resend.
+type QuoteCacheError struct {
+	Cause error
+}
+
+func (e *QuoteCacheError) Error() string { return fmt.Sprintf("quote cache: %v", e.Cause) }
+func (e *QuoteCacheError) Unwrap() error { return e.Cause }
+
 // ReauthRequiredError preserves the error that invalidated or restored the
 // terminal session state, when available, plus any local cleanup failure. It
 // always matches ErrReauthRequired.
