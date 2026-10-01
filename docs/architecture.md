@@ -25,14 +25,14 @@ graph TD
 
 | Feature | Node.js | Python | Go | Rust |
 |---|---|---|---|---|
-| Package | `@wechatbot/wechatbot` | `wechatbot-sdk` (PyPI) | `github.com/corespeed-io/wechatbot/golang` | `wechatbot` (crates.io) |
+| Package | `@wechatbot/wechatbot` | `wechatbot-sdk` (PyPI) | `github.com/Icatme/wechatbot-go` | `wechatbot` (crates.io) |
 | Async model | `async/await` (Promises) | `async/await` (asyncio) | goroutines + `context.Context` | `async/await` (tokio) |
 | Middleware | ✓ Express-style pipeline | — (use decorator composition) | ✓ handler composition | — (use closures) |
 | Storage | Pluggable (file/memory/custom) | File-based | File-based | File-based |
 | Media crypto | ✓ AES-128-ECB | ✓ AES-128-ECB | ✓ AES-128-ECB | ✓ AES-128-ECB |
 | Events | Typed EventEmitter | Callbacks (on_qr_url, on_error…) | Callbacks (OnError, OnQRURL) | Callbacks |
 | Error types | 6 typed error classes | Error hierarchy | APIError with methods | thiserror enum |
-| Dependencies | 0 runtime | aiohttp, cryptography | stdlib only | reqwest, serde, aes, tokio |
+| Dependencies | 0 runtime | aiohttp, cryptography | stdlib + `golang.org/x/image` | reqwest, serde, aes, tokio |
 
 ## Shared Concepts
 
@@ -43,17 +43,21 @@ Every reply must include the `context_token` from the incoming message. All SDKs
 1. Cache tokens in memory per `(userId)`
 2. Auto-extract from incoming messages
 3. Auto-inject into outgoing messages via `reply()`
-4. (Node.js) Persist to storage for restart survival
+4. (Node.js and Go) Persist to storage for restart survival; Go scopes state by the authenticated account
 
 ### QR Login Flow
 
-All SDKs implement the same flow:
+The Go SDK implements this flow:
 
-1. `GET /get_bot_qrcode` → get QR URL
-2. Display QR to user
-3. `GET /get_qrcode_status` poll loop (2s interval)
-4. On `confirmed` → extract credentials, persist to `~/.wechatbot/`
-5. On `expired` → request new QR
+1. Restore stored credentials for a normal login; return load errors without replacing the file
+2. `POST /get_bot_qrcode` → get QR URL without advertising historical tokens; explicit reauthentication requires a fresh session
+3. Display QR through `OnQRURL`, then `GET /get_qrcode_status` with a cancellable 2s poll interval
+4. On `need_verifycode` → call `OnVerifyCode(ctx, isRetry)`, submit the trimmed input, and keep the code until `scaned` accepts it; callbacks must honor cancellation
+5. On `verify_code_blocked` or `expired` → request a fresh QR and reset pairing state, with at most three QR requests
+6. On `confirmed` → validate credentials and expected WeChat bot ID, then persist and install the session
+7. A QR flow returning `binded_redirect` cannot reuse credentials; ordinary credential restoration happens before QR acquisition
+
+Each account needs its own credentials, context, cursor, replay, quote history, and reauthentication marker. `Options.AccountID` is an expected WeChat bot ID, not a tenant namespace; applications that do not know the bot ID before the first scan provide explicit state paths. Only one active poller and one writer per state file are supported for an account across the deployment. `Run` rejects concurrent calls on the same Bot object; applications enforce ownership across Bot objects and processes with a lease or database lock.
 
 ### Long-Poll Loop
 

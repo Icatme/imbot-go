@@ -22,7 +22,7 @@ import (
 
 const (
 	DefaultBaseURL          = "https://ilinkai.weixin.qq.com"
-	ChannelVersion          = "0.5.0"
+	ChannelVersion          = "0.6.0"
 	maxAPIErrorMessageBytes = 4 * 1024
 	// iLink-App-Id header value.
 	iLinkAppID = "bot"
@@ -188,7 +188,7 @@ func (c *Client) GetQRCode(ctx context.Context, baseURL string, localTokenList [
 }
 
 // PollQRStatus polls the QR code scan status.
-// If verifyCode is non-empty, it is sent on the next poll after a need_verifycode response.
+// If verifyCode is non-empty, it is sent while awaiting acceptance of a pairing code.
 func (c *Client) PollQRStatus(ctx context.Context, baseURL, qrcode, verifyCode string) (*QRStatusResponse, error) {
 	u := baseURL + "/ilink/bot/get_qrcode_status?qrcode=" + url.QueryEscape(qrcode)
 	if verifyCode != "" {

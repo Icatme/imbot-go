@@ -15,7 +15,7 @@ import (
 // Options configures a Bot instance.
 type Options struct {
 	BaseURL               string
-	AccountID             string // optional account identifier for multi-bot isolation
+	AccountID             string // expected WeChat bot ID; also scopes default state paths
 	CredPath              string
 	ContextTokenPath      string
 	CursorPath            string
@@ -31,8 +31,10 @@ type Options struct {
 	OnQRURL               func(url string)
 	OnScanned             func()
 	OnExpired             func()
-	OnVerifyCode          func() (string, error)
-	OnError               func(err error)
+	// OnVerifyCode requests the pairing code shown in WeChat. isRetry is true
+	// when a submitted code was rejected. The callback must honor ctx cancellation.
+	OnVerifyCode func(ctx context.Context, isRetry bool) (string, error)
+	OnError      func(err error)
 }
 
 // Bot is the main WeChat bot client.

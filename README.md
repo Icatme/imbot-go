@@ -18,7 +18,41 @@ go get github.com/Icatme/wechatbot-go
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近发布（v0.5.0）：消息 ID 与文本引用
+## 最近版本（v0.6.0）：验证码登录与多账号使用
+
+`Options.OnVerifyCode` 从 `func() (string, error)` 改为
+`func(ctx context.Context, isRetry bool) (string, error)`，调用方需要更新回调签名。
+回调接收 `Login` / `Reauthenticate` 的 context，等待用户输入时必须响应取消：
+
+```go
+verifyCodes := make(chan string) // 应用将当前登录流程的用户输入写入此 channel
+bot := wechatbot.New(wechatbot.Options{
+    OnVerifyCode: func(ctx context.Context, isRetry bool) (string, error) {
+        // 应用根据 isRetry 展示首次输入或验证码错误提示。
+        select {
+        case <-ctx.Done():
+            return "", ctx.Err()
+        case code := <-verifyCodes:
+            return code, nil
+        }
+    },
+})
+```
+
+同一二维码的验证码被服务端拒绝时，下次回调的 `isRetry` 为 `true`；服务端返回 `scaned`
+或刷新二维码后重置。输入会去除首尾空白，空输入或回调错误会结束当次登录。
+未配置回调时，遇到验证码挑战会返回明确错误。验证码封锁会申请新二维码，
+与过期刷新共用最多 3 次二维码申请的上限；轮询间隔也响应 context 取消。
+
+普通登录读取本地凭证失败时会返回读取错误，保留原文件。应用可在确认需要新会话后
+显式调用 `Reauthenticate(ctx)`。
+
+多账号部署需要隔离状态路径，并确保每个账号只有一个活跃轮询实例，见[多租户与多账号](#多租户与多账号)。
+版本源码见 [v0.6.0](https://github.com/Icatme/wechatbot-go/tree/v0.6.0)。
+
+## 历史版本
+
+### v0.5.0：消息 ID 与文本引用
 
 - `message_id`、`msg_id` 和引用中的 `svr_id` 支持 JSON 字符串与完整 `uint64` 数值，避免大 ID 导致解码失败。
 - `SendMessage` / `ReplyMessage` 的 `SendResult.MessageID` 与 `AfterSend` 回调保留服务端消息 ID；服务端未返回时为空。
@@ -30,7 +64,7 @@ go get github.com/Icatme/wechatbot-go
 使用字符串字面量构造/比较 ID；从整数转换时先用 `strconv.FormatUint` / `strconv.FormatInt`，再转为 `wechatbot.MessageID`，不要直接把整数转换为字符串类型。
 缺失和 JSON 零值 ID 统一为空字符串；JSON 序列化输出字符串。现有非零数字消息的 replay 键保持不变。
 
-### 引用缓存配置
+#### 引用缓存配置
 
 ```go
 bot := wechatbot.New(wechatbot.Options{
@@ -59,8 +93,6 @@ bot := wechatbot.New(wechatbot.Options{
 缓存启用前的历史消息和仅凭 ID 引用的媒体附件无法还原。缓存不参与 Ack / Retry / Drop 和 cursor 提交判定。
 
 完整说明见 [v0.5.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.5.0)。
-
-## 历史版本
 
 ### v0.4.2
 
@@ -141,6 +173,36 @@ func main() {
 ```
 
 更多示例见 [`examples/`](examples/)。
+
+## 多租户与多账号
+
+每个微信账号创建一个 Bot，使用独立的凭证、context token、cursor、replay 和引用缓存路径。
+首次扫码尚不知道微信账号 ID 时，可留空 `AccountID`，由应用分配独立目录：
+
+```go
+stateDir := "./state/wechat/tenant-001"
+bot := wechatbot.New(wechatbot.Options{
+    CredPath:         filepath.Join(stateDir, "credentials.json"),
+    ContextTokenPath: filepath.Join(stateDir, "context_tokens.json"),
+    CursorPath:       filepath.Join(stateDir, "cursor.json"),
+    ReplayPath:       filepath.Join(stateDir, "replay_dedupe.json"),
+    QuoteCache: wechatbot.QuoteCacheOptions{
+        Path: filepath.Join(stateDir, "quotes.json"),
+    },
+    // OnQRURL / OnScanned / OnExpired 与 OnVerifyCode 接入该租户的登录交互。
+})
+```
+
+`Options.AccountID` 表示期望登录的真实微信 bot ID，不是业务租户 ID。登录结果会与它校验；
+设置后，未显式指定的凭证及 context/cursor/replay 路径默认位于 `~/.wechatbot/accounts/<AccountID>/`。
+引用缓存默认为 `<CredPath>.quotes.json`，重认证 marker 为 `<CredPath>.reauth.json`；备份或迁移时一起保存。
+
+同一微信账号在全集群只能有一个活跃的轮询实例，每个状态文件也只能由一个 Bot/进程写入。
+`Run()` 的防重复检查仅覆盖同一 Bot 对象；多进程或多机部署由应用使用租约或数据库锁选主，
+在租约失效时取消 `Run()`，并等待旧实例完全退出后再启动接替实例。
+
+有效本地凭证由 `Login(ctx, false)` 直接恢复。公共登录流程不向 QR 接口发送历史 `local_token_list`；
+`Reauthenticate(ctx)` / `Login(ctx, true)` 要求新会话，不会通过 `binded_redirect` 复用旧 token。
 
 ## 功能范围
 

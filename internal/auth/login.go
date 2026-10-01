@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Icatme/wechatbot-go/internal/persist"
@@ -81,7 +82,7 @@ type LoginOptions struct {
 	OnQRURL      func(url string)
 	OnScanned    func()
 	OnExpired    func()
-	OnVerifyCode func() (string, error)
+	OnVerifyCode func(ctx context.Context, isRetry bool) (string, error)
 }
 
 const (
@@ -99,9 +100,11 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 		baseURL = protocol.DefaultBaseURL
 	}
 
-	var existing *Credentials
 	if !opts.Force {
-		existing, _ = LoadCredentials(opts.CredPath)
+		existing, err := LoadCredentials(opts.CredPath)
+		if err != nil {
+			return nil, fmt.Errorf("load credentials: %w", err)
+		}
 		if existing != nil {
 			if err := rejectInvalidToken(existing.Token, opts.InvalidToken); err != nil {
 				return nil, err
@@ -112,13 +115,17 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 
 	qrRefreshCount := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		qrRefreshCount++
 		if qrRefreshCount > maxQRRefreshCount {
-			return nil, fmt.Errorf("QR code expired %d times — login aborted", maxQRRefreshCount)
+			return nil, fmt.Errorf("QR login aborted after %d attempts", maxQRRefreshCount)
 		}
 
-		localTokens := localTokenList(existing)
-		qr, err := client.GetQRCode(ctx, fixedQRBaseURL, localTokens)
+		// Stored credentials return above; forced reauthentication must acquire a
+		// fresh session without advertising tokens that may have been invalidated.
+		qr, err := client.GetQRCode(ctx, fixedQRBaseURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("get QR code: %w", err)
 		}
@@ -133,11 +140,19 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 		currentPollBaseURL := fixedQRBaseURL
 		pendingVerifyCode := ""
 		for {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			status, err := client.PollQRStatus(ctx, currentPollBaseURL, qr.QRCode, pendingVerifyCode)
 			if err != nil {
 				return nil, fmt.Errorf("poll QR status: %w", err)
 			}
-			pendingVerifyCode = "" // clear after use
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if status.Status == "scaned" {
+				pendingVerifyCode = ""
+			}
 
 			if status.Status != lastStatus {
 				lastStatus = status.Status
@@ -175,20 +190,6 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 				if opts.Force {
 					return nil, fmt.Errorf("account already bound; forced login cannot reuse existing credentials")
 				}
-				if existing != nil {
-					if err := rejectInvalidToken(existing.Token, opts.InvalidToken); err != nil {
-						return nil, err
-					}
-					return existing, nil
-				}
-				// Try loading from disk one more time.
-				creds, err := LoadCredentials(opts.CredPath)
-				if err == nil && creds != nil {
-					if err := rejectInvalidToken(creds.Token, opts.InvalidToken); err != nil {
-						return nil, err
-					}
-					return creds, nil
-				}
 				return nil, fmt.Errorf("account already bound but no local credentials found")
 			}
 
@@ -196,10 +197,14 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 				if opts.OnVerifyCode == nil {
 					return nil, fmt.Errorf("verify code required but no OnVerifyCode handler configured")
 				}
-				code, err := opts.OnVerifyCode()
+				code, err := opts.OnVerifyCode(ctx, pendingVerifyCode != "")
 				if err != nil {
 					return nil, fmt.Errorf("verify code input failed: %w", err)
 				}
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				code = strings.TrimSpace(code)
 				if code == "" {
 					return nil, fmt.Errorf("verify code cannot be empty")
 				}
@@ -218,15 +223,17 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 					currentPollBaseURL = "https://" + status.RedirectHost
 					fmt.Fprintf(os.Stderr, "[wechatbot] IDC redirect → %s\n", status.RedirectHost)
 				}
-				time.Sleep(2 * time.Second)
-				continue
 			}
 
 			if status.Status == "expired" {
 				break // Outer loop gets a new QR
 			}
 
-			time.Sleep(2 * time.Second)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
 		}
 	}
 }
@@ -234,13 +241,6 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 func rejectInvalidToken(token, invalidToken string) error {
 	if invalidToken != "" && token == invalidToken {
 		return ErrInvalidatedCredential
-	}
-	return nil
-}
-
-func localTokenList(existing *Credentials) []string {
-	if existing != nil && existing.Token != "" {
-		return []string{existing.Token}
 	}
 	return nil
 }

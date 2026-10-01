@@ -4,15 +4,17 @@
 
 ---
 
-## 当前状态（v0.4.2）
+## 当前状态（v0.6.0）
 
 以下详细条目保留迁移背景；当前实现状态以本节为准。
 
-- 已完成：Phase 1.1-1.4、Phase 2.1-2.5、Phase 3.1、Phase 3.3-3.5、Phase 4.1-4.4、Phase 5.1-5.4。
+- 已完成：Phase 1.1-1.4、Phase 2.1-2.5、Phase 3.1、Phase 3.3-3.5、Phase 4.1、Phase 4.4、Phase 5.1-5.4。Phase 4.2/4.3 按显式重认证契约处理，不提供携带历史 token 的扫码复用流程。
 - v0.3.0 额外修复：未登录/会话暂停发送返回明确错误，文本按 UTF-8 字符安全分片，QR/API 坏响应返回 decode/HTTP 错误，CDN/远程下载复用 SDK HTTP client，多账号 context/cursor 状态在登录后绑定真实账号。
 - v0.4.0 增加可靠投递、显式 Ack/Retry/Drop、按会话并发调度、Agent 工具调用消息、稳定出站身份、结构化 API 错误以及跨重启 fail-closed 的显式重认证。
 - v0.4.1 增加敏感错误与签名 URL 的统一脱敏、API 错误消息上限，以及出站裸 `<` 的 wire-boundary 安全归一化；同时将根包职责拆分到同包文件，不改变公共 API。
 - v0.4.2 为长轮询请求增加至少 65 秒的客户端超时与服务端等待时间之后的传输余量。
+- v0.5.0 增加无损消息 ID、发送回执和持久化文本引用恢复，支持局部引用与 MD5 校验。
+- v0.6.0：验证码回调接收 context 和重输状态，登录等待可取消；本地凭证读取失败会明确返回，并补齐多账号独立状态与单轮询实例约束。
 - 未完成：Phase 3.2 语音 SILK → WAV 转码。
 
 ---
@@ -142,22 +144,22 @@
 
 - **来源**：`openclaw-weixin/src/auth/login-qr.ts`
 - **历史现状**：Go 未处理 `need_verifycode` / `verify_code_blocked`。
-- **目标**：状态为 `need_verifycode` 时通过回调或 stdin 读取验证码继续轮询。
+- **当前实现**：状态为 `need_verifycode` 时调用 `OnVerifyCode(ctx, isRetry)`；应用负责输入交互并响应 context 取消，未配置回调时返回错误。
 - **验收**：遇到需要验证码的账号能完成登录。
 
 ### 4.2 已绑定账号处理
 
 - **来源**：`openclaw-weixin/src/auth/login-qr.ts#binded_redirect`
 - **历史现状**：Go 未处理 `binded_redirect`。
-- **目标**：识别该状态并视为已登录成功，使用本地已有凭证。
-- **验收**：已绑定账号重新登录时不再要求扫码。
+- **当前实现**：普通登录直接读取本地凭证；需要新会话的显式重认证不接受 `binded_redirect` 复用旧 token。扫码流程没有匹配凭证时收到该状态会返回错误。
+- **验收**：普通登录有凭证时无网络请求；显式重认证不会复用失效凭证。
 
 ### 4.3 local_token_list
 
 - **来源**：`openclaw-weixin/src/auth/login-qr.ts#getLocalBotTokenList()`
 - **历史现状**：Go `GetQRCode` 不带历史 token。
-- **目标**：请求 QR 时附带本地最近 10 个有效 token。
-- **验收**：抓包可见 `local_token_list` 字段。
+- **当前实现**：底层协议支持该字段，公共登录流程不发送历史 token；普通登录直接恢复本地凭证，显式重认证需要新 token。
+- **验收**：显式重认证的 QR 请求不包含历史 token。
 
 ### 4.4 多账号隔离
 

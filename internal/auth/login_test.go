@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/Icatme/wechatbot-go/internal/protocol"
 )
@@ -25,10 +29,19 @@ type loginRequests struct {
 	qrBody    []byte
 	qrCalls   int
 	pollCalls int
+	polls     []loginPollRequest
 }
 
-func newLoginTestClient(t *testing.T, statusBody string) (*protocol.Client, *loginRequests) {
+type loginPollRequest struct {
+	qrCode     string
+	verifyCode string
+}
+
+func newLoginTestClient(t *testing.T, statusBodies ...string) (*protocol.Client, *loginRequests) {
 	t.Helper()
+	if len(statusBodies) == 0 {
+		t.Fatal("missing QR status responses")
+	}
 	requests := &loginRequests{}
 	client := protocol.NewClient()
 	client.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -43,10 +56,19 @@ func newLoginTestClient(t *testing.T, statusBody string) (*protocol.Client, *log
 				}
 				requests.qrBody = body
 			}
-			responseBody = `{"qrcode":"qr-token","qrcode_img_content":"https://example.com/qr"}`
+			responseBody = fmt.Sprintf(`{"qrcode":"qr-token-%d","qrcode_img_content":"https://example.com/qr"}`, requests.qrCalls)
 		case "/ilink/bot/get_qrcode_status":
 			requests.pollCalls++
-			responseBody = statusBody
+			requests.polls = append(requests.polls, loginPollRequest{
+				qrCode: req.URL.Query().Get("qrcode"), verifyCode: req.URL.Query().Get("verify_code"),
+			})
+			if len(statusBodies) == 1 {
+				responseBody = statusBodies[0]
+			} else if requests.pollCalls <= len(statusBodies) {
+				responseBody = statusBodies[requests.pollCalls-1]
+			} else {
+				return nil, errors.New("unexpected extra QR status poll")
+			}
 		default:
 			return nil, errors.New("unexpected auth request: " + req.URL.Path)
 		}
@@ -74,17 +96,6 @@ func assertNoLocalTokens(t *testing.T, body []byte) {
 	}
 	if len(request.LocalTokens) != 0 {
 		t.Fatalf("forced login sent local tokens: %v", request.LocalTokens)
-	}
-}
-
-func TestLocalTokenList(t *testing.T) {
-	if got := localTokenList(nil); got != nil {
-		t.Fatalf("expected nil for nil existing, got %v", got)
-	}
-	creds := &Credentials{Token: "tok-123"}
-	got := localTokenList(creds)
-	if len(got) != 1 || got[0] != "tok-123" {
-		t.Fatalf("expected [tok-123], got %v", got)
 	}
 }
 
@@ -272,4 +283,230 @@ func TestLoginRejectsInvalidatedConfirmedToken(t *testing.T) {
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Fatalf("invalidated credentials were persisted: %v", statErr)
 	}
+}
+
+func TestLoginVerifyCodeStates(t *testing.T) {
+	const confirmed = `{"status":"confirmed","bot_token":"fresh-token","ilink_bot_id":"bot-1","ilink_user_id":"user-1"}`
+	tests := []struct {
+		name        string
+		statuses    []string
+		codes       []string
+		wantRetries []bool
+		wantPolls   []loginPollRequest
+		wantQRCalls int
+	}{
+		{
+			name:     "rejected code requests another input",
+			statuses: []string{`{"status":"need_verifycode"}`, `{"status":"need_verifycode"}`, confirmed},
+			codes:    []string{" 123456\n", "654321"}, wantRetries: []bool{false, true}, wantQRCalls: 1,
+			wantPolls: []loginPollRequest{{"qr-token-1", ""}, {"qr-token-1", "123456"}, {"qr-token-1", "654321"}},
+		},
+		{
+			name:     "blocked code resets on a fresh QR",
+			statuses: []string{`{"status":"need_verifycode"}`, `{"status":"verify_code_blocked"}`, `{"status":"need_verifycode"}`, confirmed},
+			codes:    []string{"123456", "654321"}, wantRetries: []bool{false, false}, wantQRCalls: 2,
+			wantPolls: []loginPollRequest{{"qr-token-1", ""}, {"qr-token-1", "123456"}, {"qr-token-2", ""}, {"qr-token-2", "654321"}},
+		},
+		{
+			name:     "accepted code clears before a new challenge",
+			statuses: []string{`{"status":"need_verifycode"}`, `{"status":"scaned"}`, `{"status":"need_verifycode"}`, confirmed},
+			codes:    []string{"123456", "654321"}, wantRetries: []bool{false, false}, wantQRCalls: 1,
+			wantPolls: []loginPollRequest{{"qr-token-1", ""}, {"qr-token-1", "123456"}, {"qr-token-1", ""}, {"qr-token-1", "654321"}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, requests := newLoginTestClient(t, tc.statuses...)
+			path := filepath.Join(t.TempDir(), "credentials.json")
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			var retries []bool
+			got, err := Login(ctx, client, LoginOptions{
+				CredPath: path, OnQRURL: func(string) {}, OnScanned: func() {},
+				OnVerifyCode: func(inputCtx context.Context, isRetry bool) (string, error) {
+					if inputCtx != ctx {
+						return "", errors.New("input callback did not receive the login context")
+					}
+					if len(retries) >= len(tc.codes) {
+						return "", errors.New("unexpected extra verify-code callback")
+					}
+					code := tc.codes[len(retries)]
+					retries = append(retries, isRetry)
+					return code, nil
+				},
+			})
+			if err != nil || got == nil || got.Token != "fresh-token" {
+				t.Fatalf("login did not complete: credentials=%+v err=%v", got, err)
+			}
+			if !slices.Equal(retries, tc.wantRetries) || !slices.Equal(requests.polls, tc.wantPolls) || requests.qrCalls != tc.wantQRCalls {
+				t.Fatalf("flow mismatch: retries=%v polls=%v QR calls=%d", retries, requests.polls, requests.qrCalls)
+			}
+			stored, err := LoadCredentials(path)
+			if err != nil || stored == nil || stored.Token != got.Token {
+				t.Fatalf("confirmed credentials not persisted: credentials=%+v err=%v", stored, err)
+			}
+			assertNoLocalTokens(t, requests.qrBody)
+		})
+	}
+}
+
+func TestLoginVerifyCodeInputFailure(t *testing.T) {
+	inputErr := errors.New("input closed")
+	tests := []struct {
+		name     string
+		callback func(context.Context, bool) (string, error)
+		wantText string
+		wantErr  error
+	}{
+		{name: "missing callback", wantText: "no OnVerifyCode handler"},
+		{name: "callback failure", callback: func(context.Context, bool) (string, error) { return "", inputErr }, wantText: "verify code input failed", wantErr: inputErr},
+		{name: "empty input", callback: func(context.Context, bool) (string, error) { return " \t\n", nil }, wantText: "verify code cannot be empty"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, requests := newLoginTestClient(t, `{"status":"need_verifycode"}`)
+			path := filepath.Join(t.TempDir(), "credentials.json")
+			got, err := Login(context.Background(), client, LoginOptions{CredPath: path, OnQRURL: func(string) {}, OnVerifyCode: tc.callback})
+			if got != nil || err == nil || !strings.Contains(err.Error(), tc.wantText) || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
+				t.Fatalf("unexpected input failure: credentials=%+v err=%v", got, err)
+			}
+			if requests.qrCalls != 1 || requests.pollCalls != 1 {
+				t.Fatalf("input failure continued authentication: %+v", requests)
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("input failure persisted credentials: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoginCancellationWhileWaitingForVerifyCode(t *testing.T) {
+	client, requests := newLoginTestClient(t, `{"status":"need_verifycode"}`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	entered := make(chan struct{})
+	done := make(chan error, 1)
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	go func() {
+		_, err := Login(ctx, client, LoginOptions{
+			CredPath: path, OnQRURL: func(string) {},
+			OnVerifyCode: func(inputCtx context.Context, isRetry bool) (string, error) {
+				close(entered)
+				<-inputCtx.Done()
+				return "", inputCtx.Err()
+			},
+		})
+		done <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("verify-code callback did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("login did not preserve cancellation: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("login did not stop after verify-code input was canceled")
+	}
+	if requests.pollCalls != 1 {
+		t.Fatalf("canceled input continued polling: %d calls", requests.pollCalls)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("canceled input persisted credentials: %v", err)
+	}
+}
+
+func TestLoginDoesNotSubmitCodeReturnedAfterCancellation(t *testing.T) {
+	client, requests := newLoginTestClient(t, `{"status":"need_verifycode"}`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	got, err := Login(ctx, client, LoginOptions{
+		CredPath: filepath.Join(t.TempDir(), "credentials.json"), OnQRURL: func(string) {},
+		OnVerifyCode: func(context.Context, bool) (string, error) {
+			cancel()
+			return "123456", nil
+		},
+	})
+	if got != nil || !errors.Is(err, context.Canceled) || requests.pollCalls != 1 {
+		t.Fatalf("submitted a code after cancellation: credentials=%+v err=%v polls=%d", got, err, requests.pollCalls)
+	}
+}
+
+func TestLoginCancellationDuringPollInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	synctest.Test(t, func(t *testing.T) {
+		client, requests := newLoginTestClient(t, `{"status":"wait"}`)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			_, err := Login(ctx, client, LoginOptions{CredPath: path, OnQRURL: func(string) {}})
+			done <- err
+		}()
+
+		// Let Login finish decoding/checking the response and block on its poll
+		// interval before canceling. An HTTP-completion signal is too early.
+		synctest.Wait()
+		if requests.qrCalls != 1 || requests.pollCalls != 1 {
+			t.Fatalf("login did not reach its first poll interval: %+v", requests)
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("login exited before cancellation: %v", err)
+		default:
+		}
+
+		canceledAt := time.Now()
+		cancel()
+		// Receiving also drains the login goroutine if a regression requires
+		// the fake clock to advance through an uncancellable sleep.
+		err := <-done
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("login did not preserve cancellation: %v", err)
+		}
+		if elapsed := time.Since(canceledAt); elapsed != 0 {
+			t.Fatalf("login waited %v after cancellation", elapsed)
+		}
+		if requests.qrCalls != 1 || requests.pollCalls != 1 {
+			t.Fatalf("canceled login continued requests: %+v", requests)
+		}
+	})
+}
+
+func TestLoginBlockedVerifyCodeHonorsQRRefreshLimit(t *testing.T) {
+	client, requests := newLoginTestClient(t, `{"status":"verify_code_blocked"}`)
+	got, err := Login(context.Background(), client, LoginOptions{CredPath: filepath.Join(t.TempDir(), "credentials.json"), OnQRURL: func(string) {}})
+	if got != nil || err == nil || !strings.Contains(err.Error(), "after 3 attempts") || requests.qrCalls != 3 || requests.pollCalls != 3 {
+		t.Fatalf("unexpected blocked-code limit: credentials=%+v err=%v requests=%+v", got, err, requests)
+	}
+}
+
+func TestLoginCorruptCredentialsStopsBeforeQR(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	const original = "invalid credentials JSON\n"
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	client, requests := newLoginTestClient(t, `{"status":"confirmed"}`)
+	got, err := Login(context.Background(), client, LoginOptions{CredPath: path, OnQRURL: func(string) {}})
+	if got != nil || err == nil || !strings.Contains(err.Error(), "load credentials") || requests.qrCalls != 0 {
+		t.Fatalf("corrupt credentials started QR login: credentials=%+v err=%v QR calls=%d", got, err, requests.qrCalls)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != original {
+		t.Fatalf("corrupt credentials were replaced: data=%q err=%v", data, err)
+	}
+}
+
+func TestLoginBindedRedirectWithoutCredentials(t *testing.T) {
+	client, requests := newLoginTestClient(t, `{"status":"binded_redirect"}`)
+	got, err := Login(context.Background(), client, LoginOptions{CredPath: filepath.Join(t.TempDir(), "credentials.json"), OnQRURL: func(string) {}})
+	if got != nil || err == nil || !strings.Contains(err.Error(), "no local credentials") {
+		t.Fatalf("unexpected bound-account result: credentials=%+v err=%v", got, err)
+	}
+	assertNoLocalTokens(t, requests.qrBody)
 }

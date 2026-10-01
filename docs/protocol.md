@@ -13,13 +13,31 @@ Body: { local_token_list?: ["<previous_bot_token>"] }
 → { qrcode: "<token>", qrcode_img_content: "<url>" }
 ```
 
+The protocol accepts up to 10 local tokens. This SDK's public login flow sends
+no historical tokens: normal login restores stored credentials before requesting
+a QR, and explicit reauthentication must obtain a fresh session.
+
 ### Step 2: Poll Status
 
 ```
-GET /ilink/bot/get_qrcode_status?qrcode=<token>
+GET /ilink/bot/get_qrcode_status?qrcode=<token>[&verify_code=<digits>]
 Headers: { "iLink-App-ClientVersion": "<computed_from_module_version>" }
-→ { status: "wait" | "scaned" | "confirmed" | "expired", bot_token?, ilink_bot_id?, ilink_user_id?, baseurl? }
+→ { status: "wait" | "scaned" | "confirmed" | "expired" | "scaned_but_redirect"
+          | "binded_redirect" | "need_verifycode" | "verify_code_blocked",
+    bot_token?, ilink_bot_id?, ilink_user_id?, baseurl?, redirect_host? }
 ```
+
+- `need_verifycode`: call `OnVerifyCode(ctx, isRetry)` for the code shown on the
+  user's phone. A submitted code followed by another challenge sets `isRetry`
+  to true. Keep the code on status polls until `scaned` accepts it.
+- `verify_code_blocked`: request a new QR and clear the pending code and retry
+  state. Blocked and expired QRs share the limit of three QR requests per login.
+- `scaned_but_redirect`: continue status polling at `https://<redirect_host>`.
+- `binded_redirect`: return an error in a QR login flow; existing credentials
+  are restored before QR acquisition and never reused for explicit reauthentication.
+
+The callback receives the login context and must honor its cancellation. Input
+errors or empty trimmed codes stop login. Poll intervals are also cancellable.
 
 ## Common Headers (all POST requests)
 
@@ -32,7 +50,7 @@ Authorization: Bearer <bot_token>
 X-WECHAT-UIN: <base64(String(randomUint32))>
 ```
 
-All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.5.0`.
+All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.6.0`.
 
 ## Get Updates (Long Poll)
 
