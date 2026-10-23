@@ -30,9 +30,10 @@ type QuoteKey struct {
 }
 
 type quoteRecord struct {
-	Key     QuoteKey `json:"key"`
-	Text    string   `json:"text"`
-	SavedAt int64    `json:"saved_at"`
+	Key     QuoteKey    `json:"key"`
+	Text    string      `json:"text"`
+	SavedAt int64       `json:"saved_at"`
+	Media   *QuoteMedia `json:"media,omitempty"`
 }
 
 type quoteData struct {
@@ -52,6 +53,7 @@ type QuoteStore struct {
 	records     map[QuoteKey]quoteRecord
 	now         func() time.Time
 	write       func(string, any) error
+	mediaPolicy QuoteMediaPolicy
 }
 
 func NewQuoteStore(path string, retention time.Duration, maxMessages int) *QuoteStore {
@@ -62,7 +64,8 @@ func NewQuoteStore(path string, retention time.Duration, maxMessages int) *Quote
 		maxMessages = DefaultQuoteMessages
 	}
 	return &QuoteStore{path: path, retention: retention, maxMessages: maxMessages,
-		records: make(map[QuoteKey]quoteRecord), now: time.Now, write: persist.WriteJSONAtomic}
+		records: make(map[QuoteKey]quoteRecord), now: time.Now, write: persist.WriteJSONAtomic,
+		mediaPolicy: DefaultQuoteMediaPolicy()}
 }
 
 func (s *QuoteStore) Path() string { return s.path }
@@ -146,12 +149,20 @@ func (s *QuoteStore) Put(key QuoteKey, text string) error {
 		return nil // a replay must not extend retention or cause another disk write
 	}
 	next := make([]quoteRecord, 0, len(s.records)+1)
-	next = append(next, quoteRecord{Key: key, Text: text, SavedAt: now})
+	record := quoteRecord{Key: key, Text: text, SavedAt: now}
+	if old, ok := s.records[key]; ok {
+		record.Media = old.Media
+	}
+	next = append(next, record)
 	for oldKey, record := range s.records {
 		if oldKey != key {
 			next = append(next, record)
 		}
 	}
+	return s.saveLocked(next)
+}
+
+func (s *QuoteStore) saveLocked(next []quoteRecord) error {
 	next = s.prune(next)
 	if err := s.write(s.path, quoteData{Version: 1, Records: next}); err != nil {
 		return fmt.Errorf("persist quote cache: %w", err)
@@ -161,13 +172,13 @@ func (s *QuoteStore) Put(key QuoteKey, text string) error {
 		records[record.Key] = record
 	}
 	s.records = records // publish only after the atomic replacement succeeds
-	return nil
+	return s.cleanupMediaLocked()
 }
 
 func (s *QuoteStore) prune(records []quoteRecord) []quoteRecord {
 	cutoff := s.now().Add(-s.retention).UnixMilli()
 	records = slices.DeleteFunc(records, func(r quoteRecord) bool {
-		return !validQuoteKey(r.Key) || r.Text == "" || len(r.Text) > maxQuoteTextBytes || r.SavedAt < cutoff
+		return !validQuoteKey(r.Key) || (r.Text == "" && r.Media == nil) || len(r.Text) > maxQuoteTextBytes || r.SavedAt < cutoff || !validQuoteMedia(r.Media)
 	})
 	// Prefer the newly inserted record when multiple writes share a millisecond.
 	slices.SortStableFunc(records, func(a, b quoteRecord) int {
@@ -181,8 +192,11 @@ func (s *QuoteStore) prune(records []quoteRecord) []quoteRecord {
 	})
 	counts := make(map[string]int)
 	bytes := 0
-	return slices.DeleteFunc(records, func(r quoteRecord) bool {
+	records = slices.DeleteFunc(records, func(r quoteRecord) bool {
 		size := len(r.Text) + len(r.Key.Account) + len(r.Key.Peer) + len(r.Key.Message)
+		if r.Media != nil {
+			size += len(r.Media.FileName) + len(r.Media.MIMEType) + 256
+		}
 		if counts[r.Key.Account] >= s.maxMessages || bytes+size > maxQuoteBytes {
 			return true
 		}
@@ -190,4 +204,6 @@ func (s *QuoteStore) prune(records []quoteRecord) []quoteRecord {
 		bytes += size
 		return false
 	})
+	s.pruneMedia(records)
+	return records
 }

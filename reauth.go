@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -403,6 +404,9 @@ func (b *Bot) validateStatePaths(contextTokens *store.ContextStore, cursorStore 
 	seen := make(map[string]string, len(paths))
 	for _, entry := range paths {
 		path := canonicalStatePath(entry.path)
+		if err := b.validateOutsideQuoteMedia(path); err != nil {
+			return err
+		}
 		key := statePathKey(path)
 		if previous, ok := seen[key]; ok {
 			return fmt.Errorf("state paths must be distinct: %s and %s both resolve to %q", previous, entry.name, path)
@@ -423,11 +427,64 @@ func (b *Bot) validateReauthenticationContextPaths(paths []string, cursorStore *
 		protected[statePathKey(b.quoteStore.Path())] = "quote cache"
 	}
 	for _, path := range canonicalContextPaths(paths...) {
+		if err := b.validateOutsideQuoteMedia(path); err != nil {
+			return err
+		}
 		if name, ok := protected[statePathKey(path)]; ok {
 			return fmt.Errorf("context state path %q collides with %s state", path, name)
 		}
 	}
 	return nil
+}
+
+func (b *Bot) validateOutsideQuoteMedia(path string) error {
+	if b.quoteStore == nil {
+		return nil
+	}
+	rootPath, err := resolveQuoteStatePath(b.quoteStore.MediaDir())
+	if err != nil {
+		return err
+	}
+	targetPath, err := resolveQuoteStatePath(path)
+	if err != nil {
+		return err
+	}
+	root, target := statePathKey(rootPath), statePathKey(targetPath)
+	if filepath.VolumeName(root) != filepath.VolumeName(target) {
+		return nil
+	}
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return err
+	}
+	if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+		return fmt.Errorf("state path %q must be outside quote media directory", path)
+	}
+	return nil
+}
+
+// Resolve existing parent links too: the final state file need not exist yet.
+func resolveQuoteStatePath(path string) (string, error) {
+	path = canonicalStatePath(path)
+	var tail []string
+	for {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return "", err
+		}
+		tail = append(tail, filepath.Base(path))
+		path = parent
+	}
 }
 
 func (b *Bot) credentialsPath() string {

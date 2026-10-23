@@ -50,7 +50,7 @@ Authorization: Bearer <bot_token>
 X-WECHAT-UIN: <base64(String(randomUint32))>
 ```
 
-All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.6.0`.
+All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.7.0`.
 
 ## Get Updates (Long Poll)
 
@@ -178,6 +178,13 @@ Response Header: x-encrypted-param → download param
 GET <cdn>/download?encrypted_query_param=<param>
 → AES-128-ECB encrypted bytes → decrypt with aes_key
 ```
+
+The Go SDK exposes inline referenced media through `QuotedMessage.Media` and
+`DownloadQuoted(ctx, incoming)`. These are local SDK APIs, not new wire fields.
+For ID-only `ref_msg.svr_id` references, locally retained media can be read after
+restart; missing, expired, or evicted payloads match `ErrQuoteMediaUnavailable`.
+Retention does not persist CDN credentials and does not automatically download
+attachments while polling. `Download` continues to refer to current-message media.
 
 ## Message Item Types
 

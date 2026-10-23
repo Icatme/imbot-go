@@ -18,7 +18,61 @@ go get github.com/Icatme/wechatbot-go
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近版本（v0.6.0）：验证码登录与多账号使用
+## 最近版本（v0.7.0）：引用附件恢复
+
+`IncomingMessage.QuotedMessage.Media` 提供引用图片、文件、视频或语音的类型、文件名、
+MIME、大小及内嵌 CDN 引用；`Cached` 表示解析时已有可用的本地副本。
+图片和视频的 MIME 在取得实际数据后识别，下载前为空；无法识别的二进制格式返回 `application/octet-stream`。
+附件与当前消息的 `Images` / `Files` 等字段分开，使用 `DownloadQuoted` 显式读取：
+
+```go
+bot.Handle(wechatbot.MessageHandlerFunc(func(ctx context.Context, msg *wechatbot.IncomingMessage) wechatbot.MessageResult {
+    if msg.QuotedMessage != nil && msg.QuotedMessage.Media != nil {
+        attachment, err := bot.DownloadQuoted(ctx, msg)
+        if errors.Is(err, wechatbot.ErrQuoteMediaUnavailable) {
+            // 应用提示原附件未下载、已过期、超出配额或已被删除。
+        } else if err != nil {
+            return wechatbot.RetryMessage(err)
+        } else if attachment != nil {
+            // attachment.Data / FileName / MIMEType 交给应用处理。
+        }
+    }
+    return wechatbot.AckMessage()
+}))
+```
+
+轮询不会自动下载附件。`Download`、`DownloadQuoted` 成功取得的数据，以及 `SendMedia` /
+`ReplyContent` 成功发送的数据，会按账号、对端用户和服务端消息 ID 保存，供只有 `svr_id`
+的后续引用使用。低层 `SendMessage` 只有 CDN 引用时保存元数据，不额外下载。
+语音保留原始 SILK，不执行转码；SDK 不执行 PDF/文件解析或构造 Agent 提示词。
+
+```go
+bot := wechatbot.New(wechatbot.Options{
+    QuoteCache: wechatbot.QuoteCacheOptions{
+        MediaRetention:      7 * 24 * time.Hour,
+        MaxMediaBytes:       256 << 20, // 每账号
+        MaxSingleMediaBytes: 25 << 20,
+        // MediaDisabled: true, // 关闭附件持久化，保留文本和附件元数据
+    },
+})
+```
+
+上述数值也是默认值。附件保存在 `<QuoteCache.Path>.media/`，引用索引使用原有 JSON 文件；
+备份时应一起保存，目录内不得放置其他 SDK 状态。文件名由 SDK 随机分配，原始文件名仅用于展示。
+持久化文件是解密后的正文，缓存不保存 CDN 地址或 AES 密钥。
+每次缓存写入会淘汰过期、超量记录并清理失去引用的 SDK 文件；查询不会命中过期文件。
+应用需要在空闲时主动释放磁盘空间时，可调用 `bot.PruneQuoteCache()`。
+被淘汰的附件仍可保留文件名等元数据，读取时返回 `ErrQuoteMediaUnavailable`。
+
+超出文件大小或空间配额不会将成功下载或发送改判为失败。缓存 IO 故障通过 `OnError`
+报告 `*QuoteCacheError`；读取仅有本地副本的引用时，IO 故障直接返回该错误。
+缓存损坏保留原文件；本地读取失败不会触发隐藏的远程重试。`QuoteCache.Disabled` 关闭全部缓存。
+
+版本源码见 [v0.7.0](https://github.com/Icatme/wechatbot-go/tree/v0.7.0)。
+
+## 历史版本
+
+### v0.6.0：验证码登录与多账号使用
 
 `Options.OnVerifyCode` 从 `func() (string, error)` 改为
 `func(ctx context.Context, isRetry bool) (string, error)`，调用方需要更新回调签名。
@@ -50,8 +104,6 @@ bot := wechatbot.New(wechatbot.Options{
 多账号部署需要隔离状态路径，并确保每个账号只有一个活跃轮询实例，见[多租户与多账号](#多租户与多账号)。
 版本源码见 [v0.6.0](https://github.com/Icatme/wechatbot-go/tree/v0.6.0)。
 
-## 历史版本
-
 ### v0.5.0：消息 ID 与文本引用
 
 - `message_id`、`msg_id` 和引用中的 `svr_id` 支持 JSON 字符串与完整 `uint64` 数值，避免大 ID 导致解码失败。
@@ -76,7 +128,7 @@ bot := wechatbot.New(wechatbot.Options{
 })
 ```
 
-设置 `QuoteCache.Disabled = true` 可关闭缓存。缓存保存收发正文及语音转写文本，不保存认证信息或媒体文件。
+设置 `QuoteCache.Disabled = true` 可关闭缓存。v0.5.0 缓存保存收发正文及语音转写文本，不保存认证信息或媒体文件；v0.7.0 的附件能力见上文。
 每条正文最多 64 KiB，整个文件内的正文和身份字段合计最多 16 MiB；超出容量优先淘汰旧记录。
 默认 30 天后不再命中，后续写入时清理过期磁盘记录。一个缓存文件只能由一个 Bot/进程写入；配置路径不得与其他状态文件重合。
 

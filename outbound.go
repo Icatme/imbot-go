@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/Icatme/wechatbot-go/internal/markdown"
@@ -104,7 +105,7 @@ func (b *Bot) SendMessage(ctx context.Context, userID string, msg OutboundMessag
 		return SendResult{}, err
 	}
 	contextToken := b.contextTokens.Get(userID)
-	result, err := b.sendMessage(ctx, sessionGeneration, userID, contextToken, msg)
+	result, err := b.sendMessage(ctx, sessionGeneration, userID, contextToken, msg, nil)
 	if err != nil {
 		b.notifyError(ctx, sessionGeneration, userID, contextToken, err)
 	}
@@ -130,14 +131,14 @@ func (b *Bot) ReplyMessage(ctx context.Context, inbound *IncomingMessage, msg Ou
 		}
 		b.log("warn", "failed to persist context token: %v", err)
 	}
-	result, err := b.sendMessage(ctx, sessionGeneration, inbound.UserID, inbound.ContextToken, msg)
+	result, err := b.sendMessage(ctx, sessionGeneration, inbound.UserID, inbound.ContextToken, msg, nil)
 	if err != nil {
 		b.notifyError(ctx, sessionGeneration, inbound.UserID, inbound.ContextToken, err)
 	}
 	return result, err
 }
 
-func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID, contextToken string, msg OutboundMessage) (SendResult, error) {
+func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID, contextToken string, msg OutboundMessage, mediaData []byte) (SendResult, error) {
 	if err := requireContextToken(userID, contextToken); err != nil {
 		return SendResult{}, err
 	}
@@ -154,6 +155,7 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 	}
 
 	validatedUserID := userID
+	originalMedia := quotedMediaFromItem(&msg.Item)
 	validatedClientID := msg.ClientID
 	request := SendRequest{UserID: userID, Message: msg}
 	result := SendResult{ClientID: msg.ClientID, RunID: msg.RunID}
@@ -192,6 +194,17 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 		// failures are reported separately: returning a send error here could
 		// cause a caller to deliver the already accepted message again.
 		b.cacheQuote(creds.AccountID, request.UserID, receipt.MessageID, quoteText([]MessageItem{request.Message.Item}))
+		acceptedMedia := quotedMediaFromItem(&request.Message.Item)
+		if acceptedMedia != nil {
+			var retained []byte
+			if reflect.DeepEqual(originalMedia, acceptedMedia) {
+				retained = mediaData
+			}
+			if retained != nil {
+				acceptedMedia.MIMEType = downloadedMIME(&DownloadedMedia{Data: retained, Type: string(acceptedMedia.Type), FileName: acceptedMedia.FileName})
+			}
+			b.cacheQuoteMedia(creds.AccountID, request.UserID, receipt.MessageID, acceptedMedia, retained)
+		}
 	}
 	outcome := SendOutcome{Request: request, Result: result, Err: sendErr}
 	if hookErr := b.hooks.AfterSend.Run(outcome); hookErr != nil {

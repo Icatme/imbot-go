@@ -20,6 +20,18 @@ const maxDownloadBytes = 100 * 1024 * 1024
 // Download downloads media from an incoming message.
 // Returns nil if the message has no media. Priority: image > file > video > voice.
 func (b *Bot) Download(ctx context.Context, msg *IncomingMessage) (*DownloadedMedia, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("inbound message is nil")
+	}
+	result, err := b.downloadCurrent(ctx, msg)
+	if err == nil && result != nil {
+		result.MIMEType = downloadedMIME(result)
+		b.cacheDownloadedMedia(msg, result)
+	}
+	return result, err
+}
+
+func (b *Bot) downloadCurrent(ctx context.Context, msg *IncomingMessage) (*DownloadedMedia, error) {
 	if len(msg.Images) > 0 && msg.Images[0].Media != nil {
 		data, err := b.cdnDownload(ctx, msg.Images[0].Media, msg.Images[0].AESKey)
 		if err != nil {

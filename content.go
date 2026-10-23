@@ -294,7 +294,7 @@ func (b *Bot) sendContent(ctx context.Context, sessionGeneration uint64, userID,
 		_, err = b.sendMessage(ctx, sessionGeneration, userID, contextToken, OutboundMessage{Item: MessageItem{
 			Type:      ItemImage,
 			ImageItem: imageItem,
-		}})
+		}}, content.Image)
 		return err
 	}
 
@@ -316,7 +316,7 @@ func (b *Bot) sendContent(ctx context.Context, sessionGeneration uint64, userID,
 		_, err = b.sendMessage(ctx, sessionGeneration, userID, contextToken, OutboundMessage{Item: MessageItem{
 			Type:      ItemVideo,
 			VideoItem: videoItem,
-		}})
+		}}, content.Video)
 		return err
 	}
 
@@ -345,7 +345,7 @@ func (b *Bot) sendContent(ctx context.Context, sessionGeneration uint64, userID,
 				FileName: fileName,
 				Len:      strconv.Itoa(len(content.File)),
 			},
-		}})
+		}}, content.File)
 		return err
 	}
 
@@ -385,7 +385,7 @@ func (b *Bot) sendText(ctx context.Context, sessionGeneration uint64, userID, te
 		_, err := b.sendMessage(ctx, sessionGeneration, userID, contextToken, OutboundMessage{Item: MessageItem{
 			Type:     ItemText,
 			TextItem: &TextItem{Text: chunk},
-		}})
+		}}, nil)
 		if err != nil {
 			return err
 		}
@@ -409,7 +409,7 @@ func (b *Bot) notifyError(ctx context.Context, sessionGeneration uint64, userID,
 	_, e := b.sendMessage(ctx, sessionGeneration, userID, contextToken, OutboundMessage{Item: MessageItem{
 		Type:     ItemText,
 		TextItem: &TextItem{Text: msg},
-	}})
+	}}, nil)
 	if e != nil {
 		b.log("warn", "failed to send error notice: %v", e)
 	}

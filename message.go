@@ -80,6 +80,7 @@ func (b *Bot) parseMessage(wire *WireMessage) *IncomingMessage {
 			if item.RefMsg.MessageItem != nil {
 				q.Type = detectType([]MessageItem{*item.RefMsg.MessageItem})
 				q.Text = quoteText([]MessageItem{*item.RefMsg.MessageItem})
+				q.Media = quotedMediaFromItem(item.RefMsg.MessageItem)
 				if q.Text != "" || hasInlineQuoteMedia(item.RefMsg.MessageItem) {
 					q.Resolution = QuoteEmbedded
 				}

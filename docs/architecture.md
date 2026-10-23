@@ -64,7 +64,7 @@ Each account needs its own credentials, context, cursor, replay, quote history, 
 1. `POST /getupdates` with cursor (35s server hold)
 2. Decode each batch into bounded keyed work
 3. Serialize each user's token persistence and delivery while handling unrelated users concurrently
-4. Resolve text references from account/peer-scoped quote history, cache the received text, then run `AfterReceive`, middleware, and the configured handler
+4. Resolve text and retained-media references from account/peer-scoped quote history, cache received text/media metadata without network downloads, then run `AfterReceive`, middleware, and the configured handler
 5. Commit each replay identity after Ack/Drop, then advance the global cursor only through the contiguous completed-batch prefix
 6. On `-14` error → persist a fail-closed marker, clear invalid credentials/context, and require explicit reauthentication; preserve cursor/replay, then remove the marker only after a validated same-account credential and empty context state are durable and before publishing the fresh session
 7. On network error → exponential backoff (1s → 10s max)
@@ -75,6 +75,17 @@ All SDKs support encrypted media upload and download via the WeChat CDN:
 
 1. **Upload**: generate AES key → encrypt (AES-128-ECB) → getuploadurl → POST to CDN → get download param
 2. **Download**: GET from CDN → decrypt (AES-128-ECB) with key from message
+
+The Go SDK keeps referenced attachments separate from current-message media.
+`DownloadQuoted` explicitly reads an inline CDN reference or an account/peer/ID-scoped
+retained payload. Successful explicit downloads and high-level sends retain decrypted
+bytes in SDK-owned random files; only display metadata and the owned file name enter
+the atomic JSON quote index. CDN addresses and AES keys are not persisted.
+Media defaults to 7 days, 256 MiB/account, and 25 MiB/file. Writes prune policy evictions
+and orphaned SDK files; `PruneQuoteCache` also supports idle-time cleanup. Rooted file
+access rejects links and keeps all cleanup within the dedicated media directory.
+Cache failures are observable separately from successful downloads/sends and never
+change delivery acknowledgement or trigger a hidden remote retry.
 
 The Node.js SDK additionally provides:
 
@@ -147,6 +158,7 @@ wechatbot-go/
 ├── media.go                # CDN upload and download
 ├── message.go              # Inbound message parsing
 ├── quote.go                # Text reference resolution, partial-quote validation, cache options
+├── quote_media.go          # Referenced media metadata, explicit reads, retention integration
 ├── handler.go              # Handler and middleware pipeline
 ├── reauth.go               # Fail-closed reauthentication state machine
 ├── logging.go              # Logger adapters and error reporting

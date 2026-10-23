@@ -19,6 +19,9 @@ var (
 	// ErrReauthRequired indicates that credentials were invalidated and an
 	// explicit Reauthenticate call is required.
 	ErrReauthRequired = errors.New("wechatbot: reauthentication required")
+	// ErrQuoteMediaUnavailable indicates that referenced media was not retained,
+	// expired, exceeded cache limits, or its retained file was removed.
+	ErrQuoteMediaUnavailable = errors.New("wechatbot: quoted media unavailable")
 )
 
 // APIError describes a non-success iLink API response while preserving the

@@ -9,15 +9,21 @@ import (
 	"github.com/Icatme/wechatbot-go/internal/store"
 )
 
-// QuoteCacheOptions controls local text history. The zero value enables a
-// 30-day, 10,000-message-per-account cache. The file also has a 16 MiB content
-// budget and a 64 KiB per-message limit. Path defaults to <CredPath>.quotes.json.
+// QuoteCacheOptions controls local reference history. The zero value enables
+// 30-day text history (10,000 records/account, 16 MiB metadata, 64 KiB/text), plus
+// 7-day media retention (256 MiB/account, 25 MiB/file). Only explicitly downloaded
+// or successfully sent payloads are retained; polling never downloads media.
+// Path defaults to <CredPath>.quotes.json; media is stored in Path + ".media".
 // A cache path must have one owning Bot/process, just like other state files.
 type QuoteCacheOptions struct {
-	Disabled    bool
-	Path        string
-	Retention   time.Duration
-	MaxMessages int
+	Disabled            bool
+	Path                string
+	Retention           time.Duration
+	MaxMessages         int
+	MediaDisabled       bool          // retain metadata but no payloads
+	MediaRetention      time.Duration // defaults to 7 days
+	MaxMediaBytes       int64         // per account; defaults to 256 MiB
+	MaxSingleMediaBytes int64         // defaults to 25 MiB
 }
 
 // QuoteResolution distinguishes restored text from an unresolved reference.
@@ -42,15 +48,14 @@ func (b *Bot) quoteAccount(generation uint64) string {
 }
 
 func (b *Bot) cacheInboundQuote(generation uint64, wire *WireMessage) {
-	id := normalizeQuoteID(wire.MessageID)
-	if id == "" {
-		for _, item := range wire.ItemList {
-			if id = normalizeQuoteID(item.MsgID); id != "" {
-				break
-			}
+	id := wireQuoteID(wire)
+	b.cacheQuote(b.quoteAccount(generation), peerUserID(wire), id, quoteText(wire.ItemList))
+	for _, item := range wire.ItemList {
+		if media := quotedMediaFromItem(&item); media != nil {
+			b.cacheQuoteMedia(b.quoteAccount(generation), peerUserID(wire), id, media, nil)
+			break
 		}
 	}
-	b.cacheQuote(b.quoteAccount(generation), peerUserID(wire), id, quoteText(wire.ItemList))
 }
 
 func (b *Bot) cacheQuote(account, peer string, id MessageID, text string) {
@@ -87,8 +92,20 @@ func (b *Bot) resolveQuote(generation uint64, wire *WireMessage, incoming *Incom
 			if err != nil {
 				q.Resolution = QuoteUnavailable
 				b.reportError(&QuoteCacheError{Cause: err})
+				return
 			} else if ok {
 				q.Text, q.Type, q.Resolution = text, ContentText, QuoteCached
+			}
+			media, found, mediaErr := b.quoteStore.GetMedia(store.QuoteKey{
+				Account: b.quoteAccount(generation), Peer: peerUserID(wire), Message: string(q.MessageID),
+			})
+			if mediaErr != nil {
+				q.Resolution = QuoteUnavailable
+				b.reportError(&QuoteCacheError{Cause: mediaErr})
+			} else if found {
+				q.Type, q.Resolution = ContentType(media.Type), QuoteCached
+				q.Media = &QuotedMedia{Type: q.Type, FileName: media.FileName, MIMEType: media.MIMEType,
+					Size: media.Size, Format: media.Format, Cached: media.File != ""}
 			}
 		}
 	}

@@ -267,6 +267,22 @@ type QuotedMessage struct {
 	MessageID   MessageID
 	PartialText *PartialText
 	Resolution  QuoteResolution
+	Media       *QuotedMedia
+}
+
+// QuotedMedia describes one referenced attachment. CDN references are present
+// only for inline quotes; Cached reports local availability at resolution time.
+// Use DownloadQuoted to read the attachment without treating it as new content.
+type QuotedMedia struct {
+	Type     ContentType
+	Media    *CDNMedia
+	AESKey   string
+	URL      string
+	FileName string
+	MIMEType string
+	Size     int64
+	Format   string
+	Cached   bool
 }
 
 // DownloadedMedia is the result of downloading media from a message.
@@ -275,6 +291,7 @@ type DownloadedMedia struct {
 	Type     string // "image", "file", "video", "voice"
 	FileName string
 	Format   string // "silk" for voice
+	MIMEType string
 }
 
 // UploadResult is the result of uploading media to CDN.

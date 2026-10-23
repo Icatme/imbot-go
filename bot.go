@@ -105,6 +105,9 @@ func New(opts ...Options) *Bot {
 			quotePath = reauthCredentialPath + ".quotes.json"
 		}
 		quoteStore = store.NewQuoteStore(quotePath, o.QuoteCache.Retention, o.QuoteCache.MaxMessages)
+		quoteStore.ConfigureMedia(store.QuoteMediaPolicy{Disabled: o.QuoteCache.MediaDisabled,
+			Retention: o.QuoteCache.MediaRetention, MaxBytes: o.QuoteCache.MaxMediaBytes,
+			MaxFileBytes: o.QuoteCache.MaxSingleMediaBytes})
 	}
 	client := protocol.NewClient()
 	client.BotAgent = protocol.SanitizeBotAgent(o.BotAgent)
