@@ -1,6 +1,6 @@
 # wechatbot-go
 
-wechatbot-go 是微信 iLink Bot API 的 Go SDK。
+wechatbot-go 是微信 iLink Bot API 的 Go SDK，并提供可选的国内多通道 Gateway。
 
 代码最初来源于 [corespeed-io/wechatbot](https://github.com/corespeed-io/wechatbot) 的 Go SDK 部分，
 协议行为也参考 [Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin)。当前仓库作为
@@ -18,7 +18,23 @@ go get github.com/Icatme/wechatbot-go
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近版本（v0.7.0）：引用附件恢复
+## 最近版本（v0.8.0）：多通道 Gateway 与扫码注册
+
+- 新增 `gateway`：统一账号、租户、会话和线程路由，提供显式授权、接入去重、按会话串行接入和能力查询。
+- 新增飞书/Lark、钉钉、企业微信智能机器人、企业微信自建应用、QQ 适配器，以及复用根包的微信 iLink 桥接。
+- 钉钉、飞书/Lark、企微智能机器人和 QQ 支持 `BeginRegistration → Challenge → Wait → Credentials.Config` 扫码注册；宿主负责展示授权链接、验证平台身份、保存凭据和安装连接。
+- 新增 `examples/channel-login` 凭据获取示例和 `examples/multi-channel` 多通道连接探针，配套接入、能力与集成文档。
+
+原微信根包 API 和 module path 保持不变；新增通道按需导入，要求仍为 Go 1.25+，未增加第三方依赖。
+企微自建应用使用已有凭据；QQ 扫码取得凭据后仍需配置 HTTPS 消息回调。
+统一层尚不提供媒体上传下载、持久 inbox/outbox 或跨副本账号租约；真实平台账号与 UI 验收仍需使用者完成。
+
+接入说明见[多通道 Gateway](docs/channels/README.md)、[扫码接入](docs/channels/onboarding.md)和[能力矩阵](docs/channels/capabilities.md)。
+完整版本说明见 [v0.8.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.0)。
+
+## 历史版本
+
+### v0.7.0：引用附件恢复
 
 `IncomingMessage.QuotedMessage.Media` 提供引用图片、文件、视频或语音的类型、文件名、
 MIME、大小及内嵌 CDN 引用；`Cached` 表示解析时已有可用的本地副本。
@@ -69,8 +85,6 @@ bot := wechatbot.New(wechatbot.Options{
 缓存损坏保留原文件；本地读取失败不会触发隐藏的远程重试。`QuoteCache.Disabled` 关闭全部缓存。
 
 版本源码见 [v0.7.0](https://github.com/Icatme/wechatbot-go/tree/v0.7.0)。
-
-## 历史版本
 
 ### v0.6.0：验证码登录与多账号使用
 

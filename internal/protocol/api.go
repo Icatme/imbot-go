@@ -22,7 +22,7 @@ import (
 
 const (
 	DefaultBaseURL          = "https://ilinkai.weixin.qq.com"
-	ChannelVersion          = "0.7.0"
+	ChannelVersion          = "0.8.0"
 	maxAPIErrorMessageBytes = 4 * 1024
 	// iLink-App-Id header value.
 	iLinkAppID = "bot"
