@@ -2,6 +2,16 @@
 
 `channels/wecom` 对接 openws 智能机器人，与企业自建应用不同。配置 AccountID、BotID、Secret，可加本地 TenantID；不接受入站 payload 覆盖本地账号。默认连接 wss://openws.work.weixin.qq.com。
 
+## 扫码注册 / 绑定
+
+`wecom.BeginRegistration(ctx, wecom.RegistrationOptions{})` → `Challenge()` → `Wait(ctx)` → `Credentials.Config(accountID)` 获取智能机器人的 `BotID/Secret`。宿主仅向当前绑定用户展示授权链接或本地生成的二维码；凭据持久化由宿主负责。完整示例见 [扫码接入](onboarding.md)。`Config` 不推断企业 TenantID，需租户隔离的应用仍应显式配置。
+
+协议以企微官方 [wecom-cli 的 qrcode.rs](https://github.com/WecomTeam/wecom-cli/blob/main/crates/wecom-cli/src/auth/qrcode.rs) 为依据：`GET https://work.weixin.qq.com/ai/qc/generate` 获取 `data.scode/auth_url`，再每 3 秒 `GET /ai/qc/query_result?scode=...`；完成时读取 `data.bot_info.botid/secret`。默认来源为官方外部接入模板 `wecom_cli_external`，`plat` 随当前操作系统传递。服务端未返回有效期，SDK 沿用官方 CLI 的 300 秒本地等待上限。
+
+这些 `ai/qc` 是扫码接入端点，不应视作稳定公开 OpenAPI。官方 CLI 仅定义 `success` 为完成，其他非空字符串状态继续等待，受上述本地期限限制；SDK 不推测额外的拒绝/过期状态。HTTP/业务错误及缺失或无效字段直接返回错误，不自动改用手填凭据或生成新二维码。当前仅验证了未扫码生成/查询响应及本地模拟回归，没有扫码创建机器人或进行 UI/真实消息验收。
+
+此接口只适用于 `channels/wecom` 智能机器人，不返回自建应用所需的 CorpID/AgentID/CorpSecret，也不改变 `channels/wecomapp` 的接入方式。
+
 ## 已实现
 
 认证 aibot_subscribe、应用层 ping 与回执、原生文本/语音转写/图文混排/媒体描述接收、主动 Markdown/原生模板卡片、回复模板卡片、完整快照流式回复。

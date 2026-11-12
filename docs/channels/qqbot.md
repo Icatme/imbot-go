@@ -8,6 +8,16 @@
 
 每次回调先校验 X-Signature-Timestamp + 原始请求体的 Ed25519 签名、5 分钟时间窗；不能把 JSON 重新序列化后验签。secret 按协议重复填满 32 字节 seed。op=13 挑战也先验签，再签 event_ts + plain_token；op=1 返回 op=11 心跳；op=0 成功接入后返回 op=12,d=0，接入失败返回 op=12,d=1 请求重投。不能只在 HTTP 头上返回成功而忽略协议级结果。
 
+## 扫码注册 / 绑定
+
+`qqbot.BeginRegistration(ctx, qqbot.RegistrationOptions{})` → `Challenge()` → `Wait(ctx)` → `Credentials.Config(accountID)` 获取 AppID/ClientSecret；可选 `UserOpenID` 是扫码用户身份，不自动授予发送权限。完整示例见 [扫码接入](onboarding.md)。
+
+协议来自腾讯官方 [QQBot Connector 1.2.0](https://www.npmjs.com/package/@tencent-connect/qqbot-connector)：`POST https://q.qq.com/lite/create_bind_task` 提交本次随机生成的 32 字节密钥，返回 `task_id`；宿主将官方 connect 页面链接本地绘制成二维码。每 2 秒 `POST /lite/poll_bind_result`，状态 0/1 等待、2 完成、3 过期。成功结果中的 `bot_encrypt_secret` 是 Base64 编码的 `12 字节 IV | 密文 | 16 字节 GCM tag`，使用本次 AES-256-GCM 密钥校验解密。官方成功 HTTP 响应返回单个机器人；Node SDK 的数组返回值是封装层，不在此额外扩展多机器人协议。
+
+默认 `Source` 为空，对外显示“第三方机器人”，可显式提供平台认可的来源。平台未返回 TTL，`Timeout` 默认 10 分钟，仅为本地等待上限；二维码仍可提前过期。私钥不出现在 Challenge 或日志里，但授权 URL 含任务标识，必须只给发起绑定的用户。取消、网络错误、未知状态和解密失败会返回错误；不会自动换码或跳过完整性校验。
+
+扫码只取得凭据，不自动配置回调、IP 白名单、权限或主动发送。当前 `channels/qqbot` 仍是 HTTPS Webhook 入站，须按前文完成平台回调配置。本地测试覆盖绑定请求、状态、跨语言加密向量、篡改拒绝、超时、取消和错误脱敏；未完成真实 QQ 扫码或消息验收。仅用 Go 标准库实现协议，没有安装、复制或依赖 Node SDK。
+
 ## 当前功能
 
 接收 C2C_MESSAGE_CREATE、GROUP_AT_MESSAGE_CREATE，区分 user_openid/member_openid/group_openid，按本地 AppID 隔离租户。文本与媒体描述归一化；原始媒体 URL 留在 Native，不自动抓取。

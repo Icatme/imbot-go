@@ -11,3 +11,28 @@ Reply Receipt.Accepted 要求响应中明确 errcode=0；缺失回执字段返�
 未实现 AI Cards、richText 接收、媒体上传/下载、审批按钮、撤回/编辑。不要把旧 Go SDK 的方法列表当作当前应用权限。参考官方 Python stream.py/frames.py/handlers.py（2026-11-12 阅读）与当前 SDK 文档，未直接依赖任何 SDK。已有本地 mock/协议与 race 测试，真实控制台权限与长期稳定性仍待验收。
 
 会话 Webhook 的字段和路径按[钉钉官方接收消息示例](https://opensource.dingtalk.com/developerpedia/docs/learn/bot/message/)核对（2026-11-12）。该接口与固定群机器人 `/robot/send` 不同，不接受后者作为会话回复地址。
+
+## 扫码创建与授权
+
+`BeginRegistration` 实现 `/app/registration/init → begin → poll`，成功后返回机器人 ClientID / ClientSecret。由用户在钉钉手机端确认创建或授权；无需预先在开发者后台手工复制凭据。
+
+```go
+registration, err := dingtalk.BeginRegistration(ctx, dingtalk.RegistrationOptions{})
+if err != nil { return err }
+challenge := registration.Challenge()
+// 宿主将 challenge.URL 本地渲染成二维码，仅展示给发起绑定的用户。
+// 此处调用宿主自己的显示函数；不要将链接提交给第三方二维码服务。
+showAuthorization(challenge)
+credentials, err := registration.Wait(ctx)
+if err != nil { return err }
+adapter, err := dingtalk.New(credentials.Config("local-account-id"))
+if err != nil { return err }
+```
+
+注册端点默认 `https://oapi.dingtalk.com`，独立于消息 APIBase。Source 默认采用当前[钉钉官方 connector 配置](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/src/device-auth-config.ts)中的 `DING_DWS_CLAW`；[Hermes 的参考实现](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/dingtalk_auth.py)使用 `openClaw`。若平台为部署方注册了独立模板，可显式配置 Source；扫码页展示由该模板决定。这里没有自行声明 Hermes 或其他品牌身份。
+
+Challenge 提供授权链接、用户码、到期时间和轮询间隔，隐藏 device_code。宿主负责二维码显示和凭据安全存储；库不会写 `.env`、覆盖已有账号或自动启动适配器。Credentials.Config 将 ClientID 同时用于 RobotCode，与[官方主动发送实现](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/src/services/messaging.ts)一致；Gateway 用户授权仍需单独配置。
+
+Wait 遵守服务端间隔与有效期，支持 context 取消，并拒绝同时轮询同一注册会话。仅在服务端省略字段时使用官方客户端的 7200 秒有效期、3 秒间隔默认值；显式 null、非正数、溢出或无效格式直接报错。FAIL、EXPIRED、未知状态或缺失成功凭据立即结束，不照搬参考客户端对这些状态继续等待两分钟的行为。网络/HTTP 错误直接返回；调用方可以在有效期内显式再次 Wait，成功和终止结果不会重复轮询。
+
+协议对照：[官方 device-auth.ts](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/src/device-auth.ts)（2026-11-12）。本地回归覆盖 HTTP 请求契约、默认/自定义 Source、待确认到成功、凭据接入适配器、取消/并发轮询/过期、畸形响应、错误脱敏及禁重定向；未执行真实钉钉扫码创建或授权。

@@ -7,6 +7,7 @@
 - [架构与八组 PR](architecture.md)
 - [参考库与协议来源](references.md)；[本轮核对补充](research-notes.md)
 - [能力矩阵与非目标](capabilities.md)
+- [钉钉 / 飞书 / 企微 / QQ 扫码接入](onboarding.md)
 - [JZBeacon / pi-go 集成边界](integration.md)
 - [验收与限制](verification.md)
 - 通道：[飞书](feishu.md)、[钉钉](dingtalk.md)、[企微智能机器人](wecom.md)、[企微自建应用](wecomapp.md)、[QQ](qqbot.md)、[微信兼容桥](weixin.md)

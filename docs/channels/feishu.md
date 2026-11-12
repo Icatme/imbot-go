@@ -2,6 +2,32 @@
 
 `channels/feishu` 不依赖平台 SDK。默认 `Transport: "websocket"`，配置 AccountID、AppID、AppSecret。Lark 可设置 BaseURL=https://open.larksuite.com。群聊默认要求 @当前 Bot：配置 BotOpenID，或明确打开 RespondWithoutMention；Gateway 的 Authorize 仍需单独配置。
 
+## 扫码创建与绑定
+
+通过注册会话获取凭据，无需手动复制 AppID/AppSecret：
+
+```go
+registration, err := feishu.BeginRegistration(ctx, feishu.RegistrationOptions{
+    Domain: "feishu", // 国际版为 "lark"
+})
+if err != nil { return err }
+challenge := registration.Challenge()
+// 把 challenge.URL 交给当前用户的本地二维码组件；不要发送给第三方制码服务。
+showQRCode(challenge.URL)
+credentials, err := registration.Wait(ctx)
+if err != nil { return err }
+// 先安全保存 credentials，再建立消息连接。
+adapter, err := feishu.New(credentials.Config("customer-a-feishu"))
+```
+
+`BeginRegistration` 执行账号服务的 `init` / `begin`，申请 `PersonalAgent` 应用授权；`Wait` 通过私有 device code 轮询并返回凭据。它不写应用配置、不替用户决定消息权限，也不会自动重建二维码或重试网络错误。并发 `Wait` 返回 `onboarding.ErrConcurrentWait`；取消返回 context 错误，可在原二维码仍有效时显式调用 `Wait` 恢复。拒绝、过期、畸形响应分别返回 `ErrDenied`、`ErrExpired`、`ErrInvalidResponse`，终止会话。
+
+生命周期使用官方 `expires_in` 字段；缺省有效期 600 秒、轮询间隔 5 秒，显式零值、负值和超范围值拒绝。服务端 `slow_down` 会使此后每次轮询增加 5 秒；HTTP 400 的 `authorization_pending` 是正常等待状态，其余未知错误不会无限重试。整个会话受服务端期限和调用方 context 共同限制。
+
+支持从飞书识别 Lark 租户后切换到固定的官方 Lark 账号域名，包括第一次仅返回 Lark 租户标记的正常交接；同一响应中的成功凭据直接保留，拒绝/过期结果仍终止。`Credentials.Domain` 决定后续 API 域名；`Credentials.OpenID` 是扫码用户，不是机器人身份，不能填入 `Config.BotOpenID`。群聊仍需单独配置机器人身份或明确选择无 @ 回复策略，Gateway 用户授权仍由宿主配置。
+
+协议对照：[飞书官方 Node SDK 注册实现](https://github.com/larksuite/node-sdk/blob/main/scene/registration/index.ts)、[注册字段定义](https://github.com/larksuite/node-sdk/blob/main/scene/registration/types.ts)、[Hermes 接入流程](https://github.com/NousResearch/hermes-agent/blob/main/plugins/platforms/feishu/adapter.py)。按官方协议使用 `expires_in`，不沿用 Hermes 中的 `expire_in` 字段差异。相关实现仅作为协议参考，没有引入这些 SDK 或二维码依赖。已覆盖本地 HTTP 合约、虚拟时钟下的等待/降速/过期/取消、域名切换及错误回归；尚未进行真实飞书/Lark 扫码验收。
+
 ## 当前能力
 
 - endpoint discovery、二进制 protobuf Frame、Ping/Pong、分片合并、成功/失败 ACK、取消与退避重连。
