@@ -39,7 +39,7 @@ func TestIsolationKeys(t *testing.T) {
 	if a.SessionKey() == b.SessionKey() {
 		t.Fatal("delimiter collision")
 	}
-	for _, field := range []string{"account", "tenant", "thread"} {
+	for _, field := range []string{"account", "tenant", "thread", "kind"} {
 		c := a
 		switch field {
 		case "account":
@@ -48,6 +48,8 @@ func TestIsolationKeys(t *testing.T) {
 			c.TenantID = "other"
 		case "thread":
 			c.ThreadID = "other"
+		case "kind":
+			c.Kind = "group"
 		}
 		if a.SessionKey() == c.SessionKey() {
 			t.Fatal(field)
@@ -110,6 +112,24 @@ func TestTenantDedupIsolation(t *testing.T) {
 	_ = g.Accept(context.Background(), b)
 	if n != 2 {
 		t.Fatal(n)
+	}
+}
+
+func TestDedupUsesFullRoute(t *testing.T) {
+	var accepted int
+	g := newTest(t, func(context.Context, Event) error { accepted++; return nil })
+	base := event("same-platform-id")
+	thread := base
+	thread.Route.ThreadID = "thread"
+	group := base
+	group.Route.Kind = "group"
+	for _, e := range []Event{base, thread, group, base, thread, group} {
+		if err := g.Accept(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if accepted != 3 {
+		t.Fatalf("accepted %d independent route events, want 3", accepted)
 	}
 }
 func TestBoundAccount(t *testing.T) {
