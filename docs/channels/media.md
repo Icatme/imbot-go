@@ -82,6 +82,8 @@ SendText 在发送首片前检查负数序号和整个 QQ 序号区间，避免�
 
 ## 卡片交互
 
+发送按钮卡片及处理回调的完整示例见[飞书互动卡片使用指南](feishu-cards.md)，包括无需公网回调地址的长连接模式和可选 HTTP 模式。
+
 飞书、企微智能机器人和 QQ 的已支持点击事件以 `Event.Interaction` 进入同一个 Gateway Authorize/Sink 流程；Value 是平台原生动作数据，宿主仍须验证业务权限和 schema。飞书 Value 保存完整 action 对象，包括 form_value、input_value、option/options、checked 等控件数据，排除事件级卡片 token。企微 Value 保存完整原生 event JSON，保留嵌套卡片及表单选择。QQ 只接受外层 type=2、内层 data.type=11 的按钮事件；交互 ID 不可当作普通消息的 ReplyTo，业务 ACK 同时检查 HTTP 状态和平台错误字段。
 
 飞书使用本 Adapter 已发送卡片的完整 Route 缓存核对回调，缓存为进程内 30 分钟；未知/过期来源不猜测聊天类型或线程。QQ 原生 keyboard 需要显式开启，点击的接入 ACK 与业务交互回执分开，使用平台专属接口明确回应。SDK 不把按钮点击当成自动审批通过。

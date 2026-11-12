@@ -166,3 +166,11 @@
 - User authorized committing, pushing and publishing with a patch increment. Prepared v0.9.1; release notes explicitly include the additive receive-policy configuration and its associated fixes. Updated README, roadmap, protocol development fallback and its existing version assertion. Module path, dependencies and go.sum remain unchanged.
 - Reused the immediately preceding affected-package test/vet results. Release-specific TestChannelVersionBumped and TestBuildClientVersion plus whitespace checks passed. No repeated full/race suites, real-account traffic or UI acceptance; the release commit uses [skip ci] to honor the release-time test preference.
 - Publication scope: main, a new annotated v0.9.1 tag and GitHub Release metadata. No compiled binaries, custom archives, extra checksums or downstream repository changes.
+
+## 2026-11-12 - Feishu interactive card usage documentation
+
+- Added docs/channels/feishu-cards.md and linked it from the root README, channel index, Feishu guide and media contract. Documented default WebSocket callback reception without a public HTTP endpoint, the separate card-action subscription, optional authenticated Webhook mounting, JSON 2.0 button construction, full action parsing and host authorization/persistent admission.
+- Clarified current v0.9.1 boundaries: card send and callback reception share one Adapter's in-memory route cache (30 minutes, up to 4096 entries); callback context is two seconds, successful consumption returns an empty action response, and automatic card/toast updates are not exposed. Button callback data and open_url navigation are distinct. References point to official Feishu callback and card component documentation.
+- Validation: compiled the complete documentation Go example against the current module without executing it, parsed the sample callback JSON, checked 33 relative documentation links and git diff --check. Documentation-only change; no SDK implementation, dependencies, version, tests, live IM traffic, UI acceptance, commit, push or release changes.
+
+- User subsequently authorized committing and pushing the documentation to main. Reused the example compilation, JSON and link checks; staged whitespace checks passed. This documentation-only commit uses [skip ci]; no version bump, new tag or Release is included.

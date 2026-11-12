@@ -2,6 +2,8 @@
 
 `channels/feishu` 不依赖平台 SDK。默认 `Transport: "websocket"`，配置 AccountID、AppID、AppSecret。Lark 可设置 BaseURL=https://open.larksuite.com。群聊默认要求 @当前 Bot：配置 BotOpenID，或明确打开 RespondWithoutMention；Gateway 的 Authorize 仍需单独配置。
 
+卡片按钮、回传参数和长连接/Webhook 配置见[飞书互动卡片使用指南](feishu-cards.md)。默认长连接无需公网回调 URL，但需要在应用的回调配置中订阅 `card.action.trigger`。
+
 ## 扫码创建与绑定
 
 通过注册会话获取凭据，无需手动复制 AppID/AppSecret：

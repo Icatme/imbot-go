@@ -33,6 +33,8 @@ ReceivePolicy: receive.Policy{
 
 `receive` 的导入路径为 `github.com/Icatme/imbot-go/receive`。Gateway 可通过 `AccountReceivePolicies` 为每个 Bot 单独配置。策略拒收正常确认消费，不触发业务 Handler；混合内容和引用一起检查，语音转写也受语音开关约束。文件白名单是元数据筛选，实际字节仍须在显式下载后校验。完整示例见[接收策略](docs/channels/receive-policy.md)。
 
+飞书按钮卡片的发送、业务参数回传及长连接/Webhook 配置见[互动卡片使用指南](docs/channels/feishu-cards.md)。默认长连接无需公网回调地址。
+
 修复微信策略拒收误重试、QQ 已消费拒收误报运行错误，以及飞书媒体别名、缓存混合引用和缺失文件元数据绕过限制的问题。Go 版本、模块路径和第三方依赖不变；已有配置默认保持全部接收。
 
 版本说明见 [v0.9.1 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.9.1)。
