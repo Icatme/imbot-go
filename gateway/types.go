@@ -33,7 +33,9 @@ type Route struct {
 	Kind     string `json:"kind"` // direct, group or channel
 }
 
-func (r Route) SessionKey() string { return key(r.Platform, r.ID, r.TenantID, r.ChatID, r.ThreadID) }
+func (r Route) SessionKey() string {
+	return key(r.Platform, r.ID, r.TenantID, r.Kind, r.ChatID, r.ThreadID)
+}
 func (r Route) Validate() error {
 	if r.Account.Validate() != nil || strings.TrimSpace(r.ChatID) == "" {
 		return ErrInvalidEvent
