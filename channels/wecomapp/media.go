@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 // The SDK bounds in-memory application media to 20 MiB; platform type-specific

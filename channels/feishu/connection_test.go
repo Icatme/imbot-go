@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 // Exercise endpoint discovery, the actual WebSocket upgrade, protobuf

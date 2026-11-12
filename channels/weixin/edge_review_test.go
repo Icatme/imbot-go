@@ -4,21 +4,21 @@ import (
 	"errors"
 	"testing"
 
-	wechatbot "github.com/Icatme/wechatbot-go"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 func TestPartsSkipEmptyWireMediaWithoutShiftingResourceIndex(t *testing.T) {
 	a, _ := fixture(t)
 	m := incoming()
-	media := &wechatbot.CDNMedia{EncryptQueryParam: "resource"}
-	m.Raw.ItemList = []wechatbot.MessageItem{
-		{Type: wechatbot.ItemImage},
-		{Type: wechatbot.ItemText, TextItem: &wechatbot.TextItem{Text: "before image"}},
-		{Type: wechatbot.ItemImage, ImageItem: &wechatbot.ImageItem{Media: media}},
+	media := &imbot.CDNMedia{EncryptQueryParam: "resource"}
+	m.Raw.ItemList = []imbot.MessageItem{
+		{Type: imbot.ItemImage},
+		{Type: imbot.ItemText, TextItem: &imbot.TextItem{Text: "before image"}},
+		{Type: imbot.ItemImage, ImageItem: &imbot.ImageItem{Media: media}},
 	}
 	// The native parser ignores the empty image_item; its image array has one entry.
-	m.Images = []wechatbot.ImageContent{{Media: media}}
+	m.Images = []imbot.ImageContent{{Media: media}}
 	e, err := a.normalize(m)
 	if err != nil {
 		t.Fatal(err)
@@ -35,15 +35,15 @@ func TestMalformedMediaDoesNotAdvertiseDownloadableReference(t *testing.T) {
 			m := incoming()
 			switch kind {
 			case "image":
-				m.Images = []wechatbot.ImageContent{{}}
+				m.Images = []imbot.ImageContent{{}}
 			case "image_with_empty_cdn":
-				m.Images = []wechatbot.ImageContent{{Media: &wechatbot.CDNMedia{}, URL: "https://example.com/image"}}
+				m.Images = []imbot.ImageContent{{Media: &imbot.CDNMedia{}, URL: "https://example.com/image"}}
 			case "file":
-				m.Files = []wechatbot.FileContent{{FileName: "missing.bin"}}
+				m.Files = []imbot.FileContent{{FileName: "missing.bin"}}
 			case "video":
-				m.Videos = []wechatbot.VideoContent{{}}
+				m.Videos = []imbot.VideoContent{{}}
 			case "voice":
-				m.Voices = []wechatbot.VoiceContent{{Media: &wechatbot.CDNMedia{}, Text: "transcript"}}
+				m.Voices = []imbot.VoiceContent{{Media: &imbot.CDNMedia{}, Text: "transcript"}}
 			}
 			if _, err := a.normalize(m); !errors.Is(err, gateway.ErrInvalidEvent) {
 				t.Fatalf("accepted media without usable locator: %v", err)

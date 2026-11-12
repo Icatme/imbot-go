@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/persist"
-	"github.com/Icatme/wechatbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/persist"
+	"github.com/Icatme/imbot-go/internal/protocol"
 )
 
 // Credentials holds bot authentication data.
@@ -133,7 +133,7 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 		if opts.OnQRURL != nil {
 			opts.OnQRURL(qr.QRCodeImgURL)
 		} else {
-			fmt.Fprintf(os.Stderr, "[wechatbot] Scan this URL in WeChat: %s\n", qr.QRCodeImgURL)
+			fmt.Fprintf(os.Stderr, "[imbot] Scan this URL in WeChat: %s\n", qr.QRCodeImgURL)
 		}
 
 		lastStatus := ""
@@ -161,18 +161,18 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 					if opts.OnScanned != nil {
 						opts.OnScanned()
 					} else {
-						fmt.Fprintln(os.Stderr, "[wechatbot] QR scanned — confirm in WeChat")
+						fmt.Fprintln(os.Stderr, "[imbot] QR scanned — confirm in WeChat")
 					}
 				case "expired":
 					if opts.OnExpired != nil {
 						opts.OnExpired()
 					} else {
-						fmt.Fprintln(os.Stderr, "[wechatbot] QR expired — requesting new one")
+						fmt.Fprintln(os.Stderr, "[imbot] QR expired — requesting new one")
 					}
 				case "confirmed":
-					fmt.Fprintln(os.Stderr, "[wechatbot] Login confirmed")
+					fmt.Fprintln(os.Stderr, "[imbot] Login confirmed")
 				case "binded_redirect":
-					fmt.Fprintln(os.Stderr, "[wechatbot] Account already bound")
+					fmt.Fprintln(os.Stderr, "[imbot] Account already bound")
 				}
 			}
 
@@ -213,7 +213,7 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 			}
 
 			if status.Status == "verify_code_blocked" {
-				fmt.Fprintln(os.Stderr, "[wechatbot] Verify code blocked — requesting new QR")
+				fmt.Fprintln(os.Stderr, "[imbot] Verify code blocked — requesting new QR")
 				break // Outer loop gets a new QR
 			}
 
@@ -221,7 +221,7 @@ func Login(ctx context.Context, client *protocol.Client, opts LoginOptions) (*Cr
 			if status.Status == "scaned_but_redirect" {
 				if status.RedirectHost != "" {
 					currentPollBaseURL = "https://" + status.RedirectHost
-					fmt.Fprintf(os.Stderr, "[wechatbot] IDC redirect → %s\n", status.RedirectHost)
+					fmt.Fprintf(os.Stderr, "[imbot] IDC redirect → %s\n", status.RedirectHost)
 				}
 			}
 

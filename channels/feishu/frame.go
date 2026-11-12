@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
 	"strconv"
 	"time"
 )

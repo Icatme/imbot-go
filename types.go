@@ -1,14 +1,14 @@
-// Package wechatbot provides a WeChat iLink Bot SDK for Go.
+// Package imbot provides a WeChat iLink Bot SDK for Go.
 //
 // It handles QR login, long-poll message receiving, text/media sending,
 // typing indicators, context_token management, and AES-128-ECB CDN crypto.
-package wechatbot
+package imbot
 
 import (
 	"encoding/json"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/protocol"
 )
 
 // MessageID is a lossless server identifier. Both string and uint64 JSON

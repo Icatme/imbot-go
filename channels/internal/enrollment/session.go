@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/onboarding"
+	"github.com/Icatme/imbot-go/channels/onboarding"
 )
 
 // Session retains the polling credential inside its platform-owned closure.

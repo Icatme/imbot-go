@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
-	"github.com/Icatme/wechatbot-go/internal/crypto"
+	"github.com/Icatme/imbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/crypto"
 )
 
 func TestChunkTextShort(t *testing.T) {

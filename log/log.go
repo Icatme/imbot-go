@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/redact"
+	"github.com/Icatme/imbot-go/internal/redact"
 )
 
 // Level indicates the severity of a log entry.

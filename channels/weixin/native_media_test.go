@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	wechatbot "github.com/Icatme/wechatbot-go"
-	"github.com/Icatme/wechatbot-go/internal/auth"
-	"github.com/Icatme/wechatbot-go/internal/crypto"
+	"github.com/Icatme/imbot-go"
+	"github.com/Icatme/imbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/crypto"
 )
 
 func TestNativeURLImageDownload(t *testing.T) {
@@ -18,14 +18,14 @@ func TestNativeURLImageDownload(t *testing.T) {
 		_, _ = w.Write(payload)
 	}))
 	defer server.Close()
-	bot := wechatbot.New(wechatbot.Options{LogLevel: "silent"})
+	bot := imbot.New(imbot.Options{LogLevel: "silent"})
 	a, err := New(Config{AccountID: "native", Bot: bot, TakeHandlerOwnership: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := incoming()
-	m.Images = []wechatbot.ImageContent{{URL: server.URL + "/image?token=private"}}
-	m.Raw.ItemList = []wechatbot.MessageItem{{Type: wechatbot.ItemImage, ImageItem: &wechatbot.ImageItem{URL: m.Images[0].URL}}}
+	m.Images = []imbot.ImageContent{{URL: server.URL + "/image?token=private"}}
+	m.Raw.ItemList = []imbot.MessageItem{{Type: imbot.ItemImage, ImageItem: &imbot.ImageItem{URL: m.Images[0].URL}}}
 	e, err := a.normalize(m)
 	if err != nil {
 		t.Fatal(err)
@@ -62,20 +62,20 @@ func TestNativeMultiAttachmentDownloadDoesNotOverwriteQuoteCache(t *testing.T) {
 	if err := auth.SaveCredentials(&auth.Credentials{Token: "test-token", BaseURL: server.URL, AccountID: "bot-1", UserID: "bot-user"}, credentialPath); err != nil {
 		t.Fatal(err)
 	}
-	bot := wechatbot.New(wechatbot.Options{BaseURL: server.URL, AccountID: "bot-1", CredPath: credentialPath, ContextTokenPath: filepath.Join(dir, "contexts.json"), CursorPath: filepath.Join(dir, "cursor.json"), ReplayPath: filepath.Join(dir, "replay.json"), LogLevel: "silent"})
+	bot := imbot.New(imbot.Options{BaseURL: server.URL, AccountID: "bot-1", CredPath: credentialPath, ContextTokenPath: filepath.Join(dir, "contexts.json"), CursorPath: filepath.Join(dir, "cursor.json"), ReplayPath: filepath.Join(dir, "replay.json"), LogLevel: "silent"})
 	if _, err := bot.Login(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	firstMedia := &wechatbot.CDNMedia{FullURL: server.URL + "/first", AESKey: crypto.EncodeAESKeyBase64(key)}
-	secondMedia := &wechatbot.CDNMedia{FullURL: server.URL + "/second", AESKey: crypto.EncodeAESKeyBase64(key)}
+	firstMedia := &imbot.CDNMedia{FullURL: server.URL + "/first", AESKey: crypto.EncodeAESKeyBase64(key)}
+	secondMedia := &imbot.CDNMedia{FullURL: server.URL + "/second", AESKey: crypto.EncodeAESKeyBase64(key)}
 	m := incoming()
 	m.Raw.MessageID = ""
-	m.Raw.MessageType = wechatbot.MessageTypeUser
-	m.Raw.ItemList = []wechatbot.MessageItem{
-		{Type: wechatbot.ItemFile, MsgID: "A", FileItem: &wechatbot.FileItem{FileName: "first.txt", Media: firstMedia}},
-		{Type: wechatbot.ItemFile, MsgID: "B", FileItem: &wechatbot.FileItem{FileName: "second.txt", Media: secondMedia}},
+	m.Raw.MessageType = imbot.MessageTypeUser
+	m.Raw.ItemList = []imbot.MessageItem{
+		{Type: imbot.ItemFile, MsgID: "A", FileItem: &imbot.FileItem{FileName: "first.txt", Media: firstMedia}},
+		{Type: imbot.ItemFile, MsgID: "B", FileItem: &imbot.FileItem{FileName: "second.txt", Media: secondMedia}},
 	}
-	m.Files = []wechatbot.FileContent{{FileName: "first.txt", Media: firstMedia}, {FileName: "second.txt", Media: secondMedia}}
+	m.Files = []imbot.FileContent{{FileName: "first.txt", Media: firstMedia}, {FileName: "second.txt", Media: secondMedia}}
 	if data, err := bot.Download(context.Background(), m); err != nil || string(data.Data) != "first document" {
 		t.Fatal(data, err)
 	}
@@ -91,7 +91,7 @@ func TestNativeMultiAttachmentDownloadDoesNotOverwriteQuoteCache(t *testing.T) {
 	if err != nil || string(data.Data) != "second document" || data.Name != "second.txt" {
 		t.Fatal(data, err)
 	}
-	quoted := &wechatbot.IncomingMessage{UserID: "u", QuotedMessage: &wechatbot.QuotedMessage{MessageID: "A", Media: &wechatbot.QuotedMedia{Type: wechatbot.ContentFile, Cached: true}}}
+	quoted := &imbot.IncomingMessage{UserID: "u", QuotedMessage: &imbot.QuotedMessage{MessageID: "A", Media: &imbot.QuotedMedia{Type: imbot.ContentFile, Cached: true}}}
 	retained, err := bot.DownloadQuoted(context.Background(), quoted)
 	if err != nil || string(retained.Data) != "first document" {
 		t.Fatal(retained, err)

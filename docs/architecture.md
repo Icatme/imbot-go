@@ -25,7 +25,7 @@ graph TD
 
 | Feature | Node.js | Python | Go | Rust |
 |---|---|---|---|---|
-| Package | `@wechatbot/wechatbot` | `wechatbot-sdk` (PyPI) | `github.com/Icatme/wechatbot-go` | `wechatbot` (crates.io) |
+| Package | `@wechatbot/wechatbot` | `wechatbot-sdk` (PyPI) | `github.com/Icatme/imbot-go` | `wechatbot` (crates.io) |
 | Async model | `async/await` (Promises) | `async/await` (asyncio) | goroutines + `context.Context` | `async/await` (tokio) |
 | Middleware | ✓ Express-style pipeline | — (use decorator composition) | ✓ handler composition | — (use closures) |
 | Storage | Pluggable (file/memory/custom) | File-based | File-based | File-based |
@@ -147,7 +147,7 @@ python/
 ### Go
 
 ```
-wechatbot-go/
+imbot-go/
 ├── bot.go                  # Options, Bot state, and construction
 ├── login.go                # Login and credential installation
 ├── session.go              # Session snapshots and authenticated request gate

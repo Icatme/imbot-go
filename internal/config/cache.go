@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/protocol"
 )
 
 const (

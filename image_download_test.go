@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Icatme/wechatbot-go/internal/crypto"
+	"github.com/Icatme/imbot-go/internal/crypto"
 )
 
 func TestDownloadImageRejectsUnfollowedRedirectWithRealHTTPClient(t *testing.T) {

@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Icatme/wechatbot-go/internal/crypto"
-	"github.com/Icatme/wechatbot-go/internal/protocol"
-	"github.com/Icatme/wechatbot-go/internal/redact"
-	"github.com/Icatme/wechatbot-go/internal/remote"
+	"github.com/Icatme/imbot-go/internal/crypto"
+	"github.com/Icatme/imbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/redact"
+	"github.com/Icatme/imbot-go/internal/remote"
 )
 
 const maxDownloadBytes = 100 * 1024 * 1024

@@ -16,7 +16,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/onboarding"
+	"github.com/Icatme/imbot-go/channels/onboarding"
 )
 
 type registrationTransport func(*http.Request) (*http.Response, error)

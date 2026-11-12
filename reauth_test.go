@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
-	"github.com/Icatme/wechatbot-go/internal/store"
+	"github.com/Icatme/imbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/store"
 )
 
 type sessionTestPaths struct {

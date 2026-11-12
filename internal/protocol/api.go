@@ -17,12 +17,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Icatme/wechatbot-go/internal/redact"
+	"github.com/Icatme/imbot-go/internal/redact"
 )
 
 const (
 	DefaultBaseURL          = "https://ilinkai.weixin.qq.com"
-	ChannelVersion          = "0.8.6"
+	ChannelVersion          = "0.9.0"
 	maxAPIErrorMessageBytes = 4 * 1024
 	// iLink-App-Id header value.
 	iLinkAppID = "bot"

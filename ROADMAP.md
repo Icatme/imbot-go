@@ -1,10 +1,10 @@
-# wechatbot-go 迁移路线图
+# imbot-go 迁移路线图
 
-本路线图记录从 [openclaw-weixin](https://github.com/Tencent/openclaw-weixin)（功能最全的 TypeScript 参考实现）向 `wechatbot-go` 迁移/补全特性的计划。
+本路线图记录从 [openclaw-weixin](https://github.com/Tencent/openclaw-weixin)（功能最全的 TypeScript 参考实现）向 `imbot-go` 迁移/补全特性的计划。
 
 ---
 
-## 当前状态（v0.8.6）
+## 当前状态（v0.9.0）
 
 以下详细条目保留迁移背景；当前实现状态以本节为准。
 
@@ -19,6 +19,7 @@
 - v0.8.0：可选多通道 Gateway，新增飞书/Lark、钉钉、企微智能机器人、企微自建应用、QQ 和微信桥接适配器；钉钉、飞书/Lark、企微智能机器人和 QQ 支持显式扫码注册与凭据获取。接入范围与平台限制见[多通道文档](docs/channels/README.md)。
 - v0.8.5：完善多通道消息与媒体协议，修复资源路由/期限约束、原生 Bot 会话隔离、发送 hook、鉴权缓存及超时/部分成功反馈；各平台边界见[消息与媒体契约](docs/channels/media.md)。
 - v0.8.6：钉钉注册将 SCANNED 作为待授权状态，继续遵守原轮询间隔、有效期和取消；仅 SUCCESS 返回完整凭据。
+- v0.9.0：项目及模块路径迁移到 `imbot-go`，根包改为 `imbot`；既有协议行为、状态目录和历史版本保持不变，下游显式迁移依赖与导入。
 - 未完成：Phase 3.2 语音 SILK → WAV 转码。
 
 ---

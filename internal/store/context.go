@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/Icatme/wechatbot-go/internal/persist"
+	"github.com/Icatme/imbot-go/internal/persist"
 )
 
 // ContextStore persists context tokens per user.

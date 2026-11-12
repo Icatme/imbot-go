@@ -1,12 +1,12 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
-	"github.com/Icatme/wechatbot-go/internal/store"
+	"github.com/Icatme/imbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/store"
 )
 
 // Login performs QR code login or loads stored credentials. A durable

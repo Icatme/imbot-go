@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"fmt"

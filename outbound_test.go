@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/auth"
 )
 
 func TestSendMessagePreservesSuppliedIdentity(t *testing.T) {

@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"bytes"
@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Icatme/wechatbot-go/internal/crypto"
-	"github.com/Icatme/wechatbot-go/internal/store"
+	"github.com/Icatme/imbot-go/internal/crypto"
+	"github.com/Icatme/imbot-go/internal/store"
 )
 
 func deliverMediaWire(t *testing.T, b *Bot, wire WireMessage) *IncomingMessage {

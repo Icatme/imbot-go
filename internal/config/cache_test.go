@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/protocol"
 )
 
 type fakeProvider struct {

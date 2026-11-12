@@ -9,14 +9,14 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	wechatbot "github.com/Icatme/wechatbot-go"
+	"github.com/Icatme/imbot-go"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	bot := wechatbot.New(wechatbot.Options{
+	bot := imbot.New(imbot.Options{
 		OnQRURL: func(url string) {
 			fmt.Printf("\nScan this URL in WeChat:\n%s\n\n", url)
 		},
@@ -33,16 +33,16 @@ func main() {
 	fmt.Printf("Logged in: %s (%s)\n", creds.AccountID, creds.UserID)
 
 	var count atomic.Int64
-	bot.Handle(wechatbot.MessageHandlerFunc(func(ctx context.Context, msg *wechatbot.IncomingMessage) wechatbot.MessageResult {
+	bot.Handle(imbot.MessageHandlerFunc(func(ctx context.Context, msg *imbot.IncomingMessage) imbot.MessageResult {
 		current := count.Add(1)
 		fmt.Printf("[%d] %s: %s\n", current, msg.UserID, msg.Text)
 
 		_ = bot.SendTyping(ctx, msg.UserID)
 
 		if err := bot.Reply(ctx, msg, fmt.Sprintf("Echo: %s", msg.Text)); err != nil {
-			return wechatbot.RetryMessage(err)
+			return imbot.RetryMessage(err)
 		}
-		return wechatbot.AckMessage()
+		return imbot.AckMessage()
 	}))
 
 	fmt.Println("Listening for messages (Ctrl+C to stop)")

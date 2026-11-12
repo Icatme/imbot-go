@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 
 var (
 	// ErrAlreadyRunning is returned when Run is called while the bot is active.
-	ErrAlreadyRunning = errors.New("wechatbot: already running")
+	ErrAlreadyRunning = errors.New("imbot: already running")
 	// ErrNoMessageHandler is returned when Run starts without a configured handler.
-	ErrNoMessageHandler = errors.New("wechatbot: no message handler configured")
+	ErrNoMessageHandler = errors.New("imbot: no message handler configured")
 )
 
 // MessageAction controls whether an inbound delivery is acknowledged.

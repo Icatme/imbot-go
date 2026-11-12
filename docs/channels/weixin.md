@@ -3,7 +3,7 @@
 `channels/weixin` 是原有根包的适配器，而不是 iLink 重新实现。根包的登录、验证码交互、reauth marker、cursor、replay、引用缓存、媒体能力及错误类型保持不变。
 
 ```go
-native := wechatbot.New(wechatbot.Options{AccountID: actualWeChatAccountID})
+native := imbot.New(imbot.Options{AccountID: actualWeChatAccountID})
 // 应用使用原来的 Login / Reauthenticate 和扫码/验证码回调。
 if _, err := native.Login(ctx, false); err != nil { return err }
 adapter, err := weixin.New(weixin.Config{

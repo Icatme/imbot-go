@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Icatme/wechatbot-go/internal/markdown"
-	"github.com/Icatme/wechatbot-go/internal/remote"
-	"github.com/Icatme/wechatbot-go/internal/thumb"
+	"github.com/Icatme/imbot-go/internal/markdown"
+	"github.com/Icatme/imbot-go/internal/remote"
+	"github.com/Icatme/imbot-go/internal/thumb"
 )
 
 // Reply sends a text reply to an incoming message.

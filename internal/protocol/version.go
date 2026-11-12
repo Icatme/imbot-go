@@ -36,14 +36,14 @@ func parseVersionPart(s string) int {
 func moduleVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, dep := range info.Deps {
-			if dep.Path == "github.com/Icatme/wechatbot-go" {
+			if dep.Path == "github.com/Icatme/imbot-go" {
 				if isValidVersion(dep.Version) {
 					return dep.Version
 				}
 				break
 			}
 		}
-		if info.Main.Path == "github.com/Icatme/wechatbot-go" && isValidVersion(info.Main.Version) {
+		if info.Main.Path == "github.com/Icatme/imbot-go" && isValidVersion(info.Main.Version) {
 			return info.Main.Version
 		}
 	}

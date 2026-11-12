@@ -1,12 +1,12 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
-	"github.com/Icatme/wechatbot-go/internal/config"
-	"github.com/Icatme/wechatbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/config"
+	"github.com/Icatme/imbot-go/internal/protocol"
 )
 
 func (b *Bot) readyCreds() (*auth.Credentials, error) {

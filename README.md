@@ -1,6 +1,6 @@
-# wechatbot-go
+# imbot-go
 
-wechatbot-go 是微信 iLink Bot API 的 Go SDK，并提供可选的国内多通道 Gateway。
+imbot-go 是 Go 多 IM 机器人 SDK，提供统一 Gateway，支持微信 iLink、企业微信、QQ、飞书/Lark 和钉钉。
 
 代码最初来源于 [corespeed-io/wechatbot](https://github.com/corespeed-io/wechatbot) 的 Go SDK 部分，
 协议行为也参考 [Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin)。当前仓库作为
@@ -13,20 +13,30 @@ wechatbot-go 是微信 iLink Bot API 的 Go SDK，并提供可选的国内多通
 ## 安装
 
 ```bash
-go get github.com/Icatme/wechatbot-go
+go get github.com/Icatme/imbot-go@v0.9.0
 ```
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近版本（v0.8.6）：修复钉钉扫码后的注册等待
+## 最近版本（v0.9.0）：迁移到 imbot-go
+
+项目由 `wechatbot-go` 更名为 `imbot-go`。Go 模块路径改为 `github.com/Icatme/imbot-go`，根包名改为 `imbot`；`gateway`、`channels/*` 和原生微信 API 的行为保持不变。
+
+下游需将 `go.mod` 和 import 中的 `github.com/Icatme/wechatbot-go` 改为 `github.com/Icatme/imbot-go`，根包调用从 `wechatbot.X` 改为 `imbot.X`，然后执行 `go mod tidy`。不要同时依赖新旧模块，它们的 Go 类型身份不同。
+
+历史标签保持原样，v0.8.6 及之前仍使用旧模块路径。原生微信状态继续使用已有 `~/.wechatbot` 目录及显式配置的存储路径，无需因改名重新登录。没有兼容包装包、自动状态搬迁或新的第三方依赖。
+
+版本说明见 [v0.9.0 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.9.0)。
+
+## 历史版本
+
+### v0.8.6：修复钉钉扫码后的注册等待
 
 - 钉钉返回 `SCANNED` 时继续等待授权，不再误报 `onboarding: invalid registration response`；仅在 `SUCCESS` 且凭据完整时返回成功。
 - 保留服务端轮询间隔、有效期和取消能力；拒绝、过期、未知状态及不完整成功响应仍明确失败。
 - 扩展已有注册契约，覆盖扫码后成功、拒绝、过期、取消和显式恢复。Go 1.25+、module path 与第三方依赖不变。
 
-完整版本说明见 [v0.8.6 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.6)。真实账号与 UI 验收由使用者完成。
-
-## 历史版本
+完整版本说明见 [v0.8.6 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.8.6)。真实账号与 UI 验收由使用者完成。
 
 ### v0.8.5：消息与媒体协议修复
 
@@ -36,7 +46,7 @@ go get github.com/Icatme/wechatbot-go
 
 仍要求 Go 1.25+，module path 和第三方依赖不变。钉钉出站媒体、自动转码、持久 inbox/outbox 与跨副本账号租约不在当前支持范围；真实账号与 UI 验收由使用者完成。
 
-接口与限制见[消息与媒体契约](docs/channels/media.md)、[能力矩阵](docs/channels/capabilities.md)和[多通道接入](docs/channels/README.md)。完整版本说明见 [v0.8.5 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.5)。
+接口与限制见[消息与媒体契约](docs/channels/media.md)、[能力矩阵](docs/channels/capabilities.md)和[多通道接入](docs/channels/README.md)。完整版本说明见 [v0.8.5 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.8.5)。
 
 ### v0.8.0：多通道 Gateway 与扫码注册
 
@@ -50,7 +60,7 @@ go get github.com/Icatme/wechatbot-go
 v0.8.0 的统一层尚不提供媒体上传下载、持久 inbox/outbox 或跨副本账号租约；当前版本的媒体支持见上节，真实平台账号与 UI 验收仍需使用者完成。
 
 接入说明见[多通道 Gateway](docs/channels/README.md)、[扫码接入](docs/channels/onboarding.md)和[能力矩阵](docs/channels/capabilities.md)。
-完整版本说明见 [v0.8.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.0)。
+完整版本说明见 [v0.8.0 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.8.0)。
 
 ### v0.7.0：引用附件恢复
 
@@ -60,18 +70,18 @@ MIME、大小及内嵌 CDN 引用；`Cached` 表示解析时已有可用的本�
 附件与当前消息的 `Images` / `Files` 等字段分开，使用 `DownloadQuoted` 显式读取：
 
 ```go
-bot.Handle(wechatbot.MessageHandlerFunc(func(ctx context.Context, msg *wechatbot.IncomingMessage) wechatbot.MessageResult {
+bot.Handle(imbot.MessageHandlerFunc(func(ctx context.Context, msg *imbot.IncomingMessage) imbot.MessageResult {
     if msg.QuotedMessage != nil && msg.QuotedMessage.Media != nil {
         attachment, err := bot.DownloadQuoted(ctx, msg)
-        if errors.Is(err, wechatbot.ErrQuoteMediaUnavailable) {
+        if errors.Is(err, imbot.ErrQuoteMediaUnavailable) {
             // 应用提示原附件未下载、已过期、超出配额或已被删除。
         } else if err != nil {
-            return wechatbot.RetryMessage(err)
+            return imbot.RetryMessage(err)
         } else if attachment != nil {
             // attachment.Data / FileName / MIMEType 交给应用处理。
         }
     }
-    return wechatbot.AckMessage()
+    return imbot.AckMessage()
 }))
 ```
 
@@ -81,8 +91,8 @@ bot.Handle(wechatbot.MessageHandlerFunc(func(ctx context.Context, msg *wechatbot
 语音保留原始 SILK，不执行转码；SDK 不执行 PDF/文件解析或构造 Agent 提示词。
 
 ```go
-bot := wechatbot.New(wechatbot.Options{
-    QuoteCache: wechatbot.QuoteCacheOptions{
+bot := imbot.New(imbot.Options{
+    QuoteCache: imbot.QuoteCacheOptions{
         MediaRetention:      7 * 24 * time.Hour,
         MaxMediaBytes:       256 << 20, // 每账号
         MaxSingleMediaBytes: 25 << 20,
@@ -102,7 +112,7 @@ bot := wechatbot.New(wechatbot.Options{
 报告 `*QuoteCacheError`；读取仅有本地副本的引用时，IO 故障直接返回该错误。
 缓存损坏保留原文件；本地读取失败不会触发隐藏的远程重试。`QuoteCache.Disabled` 关闭全部缓存。
 
-版本源码见 [v0.7.0](https://github.com/Icatme/wechatbot-go/tree/v0.7.0)。
+版本源码见 [v0.7.0](https://github.com/Icatme/imbot-go/tree/v0.7.0)。
 
 ### v0.6.0：验证码登录与多账号使用
 
@@ -112,7 +122,7 @@ bot := wechatbot.New(wechatbot.Options{
 
 ```go
 verifyCodes := make(chan string) // 应用将当前登录流程的用户输入写入此 channel
-bot := wechatbot.New(wechatbot.Options{
+bot := imbot.New(imbot.Options{
     OnVerifyCode: func(ctx context.Context, isRetry bool) (string, error) {
         // 应用根据 isRetry 展示首次输入或验证码错误提示。
         select {
@@ -134,7 +144,7 @@ bot := wechatbot.New(wechatbot.Options{
 显式调用 `Reauthenticate(ctx)`。
 
 多账号部署需要隔离状态路径，并确保每个账号只有一个活跃轮询实例，见[多租户与多账号](#多租户与多账号)。
-版本源码见 [v0.6.0](https://github.com/Icatme/wechatbot-go/tree/v0.6.0)。
+版本源码见 [v0.6.0](https://github.com/Icatme/imbot-go/tree/v0.6.0)。
 
 ### v0.5.0：消息 ID 与文本引用
 
@@ -145,14 +155,14 @@ bot := wechatbot.New(wechatbot.Options{
 - 文本引用缓存默认开启，按登录账号和对端用户隔离，重启后仍可使用。缓存错误通过 `*QuoteCacheError` 上报，不将已成功发送的消息改判为发送失败。
 
 **调用方迁移：** `WireMessage.MessageID` 从 `int64` 改为字符串底层类型 `MessageID`，`MessageItem.MsgID` 也使用这个类型。
-使用字符串字面量构造/比较 ID；从整数转换时先用 `strconv.FormatUint` / `strconv.FormatInt`，再转为 `wechatbot.MessageID`，不要直接把整数转换为字符串类型。
+使用字符串字面量构造/比较 ID；从整数转换时先用 `strconv.FormatUint` / `strconv.FormatInt`，再转为 `imbot.MessageID`，不要直接把整数转换为字符串类型。
 缺失和 JSON 零值 ID 统一为空字符串；JSON 序列化输出字符串。现有非零数字消息的 replay 键保持不变。
 
 #### 引用缓存配置
 
 ```go
-bot := wechatbot.New(wechatbot.Options{
-    QuoteCache: wechatbot.QuoteCacheOptions{
+bot := imbot.New(imbot.Options{
+    QuoteCache: imbot.QuoteCacheOptions{
         Path:        "./state/quotes.json", // 默认：实际凭证文件路径 + ".quotes.json"
         Retention:   30 * 24 * time.Hour,
         MaxMessages: 10000, // 每账号
@@ -176,13 +186,13 @@ bot := wechatbot.New(wechatbot.Options{
 缓存损坏会保留原文件并上报错误，当前 Bot 不会改用内存缓存或自动覆盖；修复文件后重新创建 Bot。
 缓存启用前的历史消息和仅凭 ID 引用的媒体附件无法还原。缓存不参与 Ack / Retry / Drop 和 cursor 提交判定。
 
-完整说明见 [v0.5.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.5.0)。
+完整说明见 [v0.5.0 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.5.0)。
 
 ### v0.4.2
 
 `v0.4.2` 为微信消息长轮询的客户端超时保留网络传输余量：请求至少等待 65 秒，且比服务端建议的轮询时间多 15 秒，避免正常长轮询在边界处误报超时。SDK 的 HTTP 总超时为 2 分钟。
 
-完整说明见 [v0.4.2 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.4.2)。
+完整说明见 [v0.4.2 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.4.2)。
 
 ### v0.4.1
 
@@ -193,7 +203,7 @@ bot := wechatbot.New(wechatbot.Options{
 - 出站归一化基于请求私有副本执行，避免修改调用方模板，并支持安全的并发复用。
 - 将根包的大型实现按登录、会话、轮询、内容、媒体、消息、Handler 和日志职责拆分为同包文件，公共 API 与行为保持不变。
 
-完整说明见 [v0.4.1 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.4.1)。
+完整说明见 [v0.4.1 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.4.1)。
 
 ### v0.4.0
 
@@ -212,7 +222,7 @@ bot := wechatbot.New(wechatbot.Options{
 - `LifecycleHooks.BeforeSend` 的 payload 从 `*SendContent` 改为 `*SendRequest`，并增加 `AfterSend`。
 - 收到 `ErrReauthRequired` 后，由应用决定何时发起二维码交互并调用 `Reauthenticate(ctx)`。
 
-完整说明见 [v0.4.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.4.0)。
+完整说明见 [v0.4.0 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.4.0)。
 
 ## 快速开始
 
@@ -227,14 +237,14 @@ import (
     "os/signal"
     "syscall"
 
-    "github.com/Icatme/wechatbot-go"
+    "github.com/Icatme/imbot-go"
 )
 
 func main() {
     ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
     defer cancel()
 
-    bot := wechatbot.New(wechatbot.Options{
+    bot := imbot.New(imbot.Options{
         OnQRURL: func(url string) { fmt.Println("请扫码:", url) },
     })
 
@@ -243,11 +253,11 @@ func main() {
         os.Exit(1)
     }
 
-    bot.Handle(wechatbot.MessageHandlerFunc(func(ctx context.Context, msg *wechatbot.IncomingMessage) wechatbot.MessageResult {
+    bot.Handle(imbot.MessageHandlerFunc(func(ctx context.Context, msg *imbot.IncomingMessage) imbot.MessageResult {
         if err := bot.Reply(ctx, msg, fmt.Sprintf("Echo: %s", msg.Text)); err != nil {
-            return wechatbot.RetryMessage(err)
+            return imbot.RetryMessage(err)
         }
-        return wechatbot.AckMessage()
+        return imbot.AckMessage()
     }))
 
     if err := bot.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -265,12 +275,12 @@ func main() {
 
 ```go
 stateDir := "./state/wechat/tenant-001"
-bot := wechatbot.New(wechatbot.Options{
+bot := imbot.New(imbot.Options{
     CredPath:         filepath.Join(stateDir, "credentials.json"),
     ContextTokenPath: filepath.Join(stateDir, "context_tokens.json"),
     CursorPath:       filepath.Join(stateDir, "cursor.json"),
     ReplayPath:       filepath.Join(stateDir, "replay_dedupe.json"),
-    QuoteCache: wechatbot.QuoteCacheOptions{
+    QuoteCache: imbot.QuoteCacheOptions{
         Path: filepath.Join(stateDir, "quotes.json"),
     },
     // OnQRURL / OnScanned / OnExpired 与 OnVerifyCode 接入该租户的登录交互。

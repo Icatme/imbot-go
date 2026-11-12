@@ -19,8 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type Config struct {

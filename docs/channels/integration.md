@@ -1,6 +1,6 @@
 # JZBeacon / pi-go 的接入边界
 
-本轮只改 wechatbot-go，不改 JZBeacon 或 pi-go。建议依赖方向如下：
+imbot-go 负责平台协议与 Gateway；JZBeacon 和 pi-go 保持各自的业务与 Agent 职责。依赖方向如下：
 
 ```
 平台协议 / SDK 兼容桥

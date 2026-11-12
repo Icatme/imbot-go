@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type cancelWriteSocket struct{ fakeSocket }

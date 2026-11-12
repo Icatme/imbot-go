@@ -14,8 +14,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/onboarding"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/onboarding"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type registrationRoundTripper func(*http.Request) (*http.Response, error)

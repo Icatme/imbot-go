@@ -10,23 +10,23 @@ import (
 	"strconv"
 	"time"
 
-	wechatbot "github.com/Icatme/wechatbot-go"
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type mediaEntry struct {
-	inbound  *wechatbot.IncomingMessage
+	inbound  *imbot.IncomingMessage
 	quoted   bool
-	outbound *wechatbot.MessageItem
-	upload   *wechatbot.UploadResult
+	outbound *imbot.MessageItem
+	upload   *imbot.UploadResult
 	replyTo  string
 }
 
 // copyOutbound keeps mutable native hook arguments out of the shared cache.
 // Copying UploadResult also preserves its private native session binding.
-func (e mediaEntry) copyOutbound(clientID string) wechatbot.OutboundMessage {
-	out := wechatbot.OutboundMessage{ClientID: clientID, Item: *e.outbound}
+func (e mediaEntry) copyOutbound(clientID string) imbot.OutboundMessage {
+	out := imbot.OutboundMessage{ClientID: clientID, Item: *e.outbound}
 	if p := out.Item.ImageItem; p != nil {
 		v := *p
 		v.Media, v.ThumbMedia = cloneCDN(p.Media), cloneCDN(p.ThumbMedia)
@@ -50,7 +50,7 @@ func (e mediaEntry) copyOutbound(clientID string) wechatbot.OutboundMessage {
 	return out
 }
 
-func cloneCDN(p *wechatbot.CDNMedia) *wechatbot.CDNMedia {
+func cloneCDN(p *imbot.CDNMedia) *imbot.CDNMedia {
 	if p == nil {
 		return nil
 	}
@@ -58,11 +58,11 @@ func cloneCDN(p *wechatbot.CDNMedia) *wechatbot.CDNMedia {
 	return &v
 }
 
-func hasMediaLocator(p *wechatbot.CDNMedia) bool {
+func hasMediaLocator(p *imbot.CDNMedia) bool {
 	return p != nil && (p.EncryptQueryParam != "" || p.FullURL != "")
 }
 
-func (a *Adapter) rememberMedia(r gateway.Route, id, kind string, index int, name string, size int64, m *wechatbot.IncomingMessage) gateway.Attachment {
+func (a *Adapter) rememberMedia(r gateway.Route, id, kind string, index int, name string, size int64, m *imbot.IncomingMessage) gateway.Attachment {
 	p := gateway.Attachment{Kind: kind, Ref: id + ":" + kind + ":" + strconv.Itoa(index), Name: name, Size: size, MessageID: id, Scope: &r, ExpiresAt: time.Now().Add(a.cfg.ReplyTTL)}
 	selected := *m // retains native, unexported session generation
 	if m.Raw != nil {
@@ -75,19 +75,19 @@ func (a *Adapter) rememberMedia(r gateway.Route, id, kind string, index int, nam
 		v := m.Images[index]
 		v.Media = cloneCDN(v.Media)
 		v.ThumbMedia = cloneCDN(v.ThumbMedia)
-		selected.Images = []wechatbot.ImageContent{v}
+		selected.Images = []imbot.ImageContent{v}
 	case "file":
 		v := m.Files[index]
 		v.Media = cloneCDN(v.Media)
-		selected.Files = []wechatbot.FileContent{v}
+		selected.Files = []imbot.FileContent{v}
 	case "video":
 		v := m.Videos[index]
 		v.Media = cloneCDN(v.Media)
-		selected.Videos = []wechatbot.VideoContent{v}
+		selected.Videos = []imbot.VideoContent{v}
 	case "voice":
 		v := m.Voices[index]
 		v.Media = cloneCDN(v.Media)
-		selected.Voices = []wechatbot.VoiceContent{v}
+		selected.Voices = []imbot.VoiceContent{v}
 		p.MIME = "audio/silk"
 	case "quote":
 		q := *m.QuotedMessage
@@ -116,7 +116,7 @@ func (a *Adapter) Download(ctx context.Context, r gateway.Route, p gateway.Attac
 	if !ok || entry.inbound == nil {
 		return gateway.MediaContent{}, gateway.ErrMediaExpired
 	}
-	var result *wechatbot.DownloadedMedia
+	var result *imbot.DownloadedMedia
 	var err error
 	if entry.quoted {
 		result, err = a.bot.DownloadQuoted(ctx, entry.inbound)
@@ -139,8 +139,8 @@ func (a *Adapter) Download(ctx context.Context, r gateway.Route, p gateway.Attac
 	return gateway.MediaContent{Data: result.Data, Name: result.FileName, MIME: result.MIMEType}, nil
 }
 
-func (a *Adapter) downloadRaw(ctx context.Context, m *wechatbot.IncomingMessage) (*wechatbot.DownloadedMedia, error) {
-	var media *wechatbot.CDNMedia
+func (a *Adapter) downloadRaw(ctx context.Context, m *imbot.IncomingMessage) (*imbot.DownloadedMedia, error) {
+	var media *imbot.CDNMedia
 	var name, typ string
 	switch {
 	case len(m.Images) > 0:
@@ -148,7 +148,7 @@ func (a *Adapter) downloadRaw(ctx context.Context, m *wechatbot.IncomingMessage)
 		if err != nil {
 			return nil, err
 		}
-		return &wechatbot.DownloadedMedia{Data: data, Type: "image", MIMEType: http.DetectContentType(data)}, nil
+		return &imbot.DownloadedMedia{Data: data, Type: "image", MIMEType: http.DetectContentType(data)}, nil
 	case len(m.Files) > 0:
 		media, name, typ = m.Files[0].Media, m.Files[0].FileName, "file"
 		if name == "" {
@@ -166,7 +166,7 @@ func (a *Adapter) downloadRaw(ctx context.Context, m *wechatbot.IncomingMessage)
 	if err != nil {
 		return nil, err
 	}
-	result := &wechatbot.DownloadedMedia{Data: data, FileName: name, Type: typ}
+	result := &imbot.DownloadedMedia{Data: data, FileName: name, Type: typ}
 	if typ == "voice" {
 		result.MIMEType, result.Format = "audio/silk", "silk"
 	} else {
@@ -191,7 +191,7 @@ func (a *Adapter) Upload(ctx context.Context, r gateway.Route, u gateway.MediaUp
 	if err := u.Validate(); err != nil {
 		return gateway.Attachment{}, err
 	}
-	var inbound *wechatbot.IncomingMessage
+	var inbound *imbot.IncomingMessage
 	if u.ReplyTo != "" {
 		var ok bool
 		if inbound, ok = a.replies.Get(wire.ContextKey(r, u.ReplyTo)); !ok {
@@ -200,17 +200,17 @@ func (a *Adapter) Upload(ctx context.Context, r gateway.Route, u gateway.MediaUp
 	} else if !a.cfg.EnableProactive || r.ThreadID != "" {
 		return gateway.Attachment{}, gateway.ErrUnsupported
 	}
-	mediaType := int(wechatbot.MediaFile)
+	mediaType := int(imbot.MediaFile)
 	switch u.Kind {
 	case "image":
-		mediaType = int(wechatbot.MediaImage)
+		mediaType = int(imbot.MediaImage)
 	case "video":
-		mediaType = int(wechatbot.MediaVideo)
+		mediaType = int(imbot.MediaVideo)
 	case "file":
 	default:
 		return gateway.Attachment{}, gateway.ErrUnsupported // no implicit audio transcoding or file fallback
 	}
-	var result *wechatbot.UploadResult
+	var result *imbot.UploadResult
 	var err error
 	if inbound != nil {
 		result, err = a.bot.UploadForReply(ctx, inbound, u.Data, mediaType)
@@ -223,17 +223,17 @@ func (a *Adapter) Upload(ctx context.Context, r gateway.Route, u gateway.MediaUp
 	if result == nil || result.Media.EncryptQueryParam == "" && result.Media.FullURL == "" {
 		return gateway.Attachment{}, gateway.ErrInvalidEvent
 	}
-	item := wechatbot.MessageItem{}
+	item := imbot.MessageItem{}
 	switch u.Kind {
 	case "image":
-		item.Type = wechatbot.ItemImage
-		item.ImageItem = &wechatbot.ImageItem{Media: cloneCDN(&result.Media), MidSize: int64(result.EncryptedFileSize)}
+		item.Type = imbot.ItemImage
+		item.ImageItem = &imbot.ImageItem{Media: cloneCDN(&result.Media), MidSize: int64(result.EncryptedFileSize)}
 	case "video":
-		item.Type = wechatbot.ItemVideo
-		item.VideoItem = &wechatbot.VideoItem{Media: cloneCDN(&result.Media), VideoSize: int64(result.EncryptedFileSize)}
+		item.Type = imbot.ItemVideo
+		item.VideoItem = &imbot.VideoItem{Media: cloneCDN(&result.Media), VideoSize: int64(result.EncryptedFileSize)}
 	case "file":
-		item.Type = wechatbot.ItemFile
-		item.FileItem = &wechatbot.FileItem{Media: cloneCDN(&result.Media), FileName: u.Name, Len: strconv.Itoa(len(u.Data))}
+		item.Type = imbot.ItemFile
+		item.FileItem = &imbot.FileItem{Media: cloneCDN(&result.Media), FileName: u.Name, Len: strconv.Itoa(len(u.Data))}
 	}
 	name := u.Name
 	if name == "" && u.Kind == "file" {
@@ -249,28 +249,28 @@ func (a *Adapter) Upload(ctx context.Context, r gateway.Route, u gateway.MediaUp
 	return p, nil
 }
 
-func (a *Adapter) addParts(e *gateway.Event, m *wechatbot.IncomingMessage) {
+func (a *Adapter) addParts(e *gateway.Event, m *imbot.IncomingMessage) {
 	indexes := map[string]int{}
 	for _, item := range m.Raw.ItemList {
 		kind := ""
 		switch item.Type {
-		case wechatbot.ItemText:
+		case imbot.ItemText:
 			if item.TextItem != nil {
 				e.Parts = append(e.Parts, gateway.ContentPart{Text: item.TextItem.Text})
 			}
-		case wechatbot.ItemImage:
+		case imbot.ItemImage:
 			if item.ImageItem != nil {
 				kind = "image"
 			}
-		case wechatbot.ItemFile:
+		case imbot.ItemFile:
 			if item.FileItem != nil {
 				kind = "file"
 			}
-		case wechatbot.ItemVideo:
+		case imbot.ItemVideo:
 			if item.VideoItem != nil {
 				kind = "video"
 			}
-		case wechatbot.ItemVoice:
+		case imbot.ItemVoice:
 			if item.VoiceItem != nil && item.VoiceItem.Text != "" {
 				e.Parts = append(e.Parts, gateway.ContentPart{Text: item.VoiceItem.Text})
 			}

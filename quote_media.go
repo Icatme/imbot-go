@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/Icatme/wechatbot-go/internal/remote"
-	"github.com/Icatme/wechatbot-go/internal/store"
+	"github.com/Icatme/imbot-go/internal/remote"
+	"github.com/Icatme/imbot-go/internal/store"
 )
 
 func quotedMediaFromItem(item *MessageItem) *QuotedMedia {

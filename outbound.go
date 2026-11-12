@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/markdown"
-	"github.com/Icatme/wechatbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/markdown"
+	"github.com/Icatme/imbot-go/internal/protocol"
 )
 
 // OutboundMessage is one item sent by one /sendmessage request.

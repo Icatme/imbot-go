@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 // Card callbacks omit chat type and thread ID. Only a known successful send can

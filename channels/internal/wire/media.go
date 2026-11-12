@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 // MediaHTTP performs bounded binary/multipart IO against a configured platform

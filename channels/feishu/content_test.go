@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 func messagePayload(typ, content string) []byte {

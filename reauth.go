@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"crypto/sha256"
@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
-	"github.com/Icatme/wechatbot-go/internal/protocol"
-	"github.com/Icatme/wechatbot-go/internal/store"
+	"github.com/Icatme/imbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/store"
 )
 
 var errExplicitReauthentication = errors.New("explicit reauthentication requested")

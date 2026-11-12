@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 const topic = "/v1.0/im/bot/messages/get"
@@ -228,7 +228,7 @@ func (a *Adapter) connect(ctx context.Context, sink gateway.Sink) error {
 		Endpoint string `json:"endpoint"`
 		Ticket   string `json:"ticket"`
 	}
-	body := map[string]any{"clientId": a.cfg.ClientID, "clientSecret": a.cfg.ClientSecret, "subscriptions": []map[string]string{{"type": "CALLBACK", "topic": topic}}, "ua": "wechatbot-go/stream", "localIp": ""}
+	body := map[string]any{"clientId": a.cfg.ClientID, "clientSecret": a.cfg.ClientSecret, "subscriptions": []map[string]string{{"type": "CALLBACK", "topic": topic}}, "ua": "imbot-go/stream", "localIp": ""}
 	if err := wire.JSON(ctx, a.cfg.HTTPClient, "dingtalk", "POST", a.cfg.APIBase+"/v1.0/gateway/connections/open", nil, body, &out); err != nil {
 		return err
 	}

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/persist"
+	"github.com/Icatme/imbot-go/internal/persist"
 )
 
 // DefaultReplayTTL is the window in which a handled message identity is ignored.

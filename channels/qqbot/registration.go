@@ -14,10 +14,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/enrollment"
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/channels/onboarding"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/enrollment"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/channels/onboarding"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 // RegistrationOptions configures an explicit QQ bot binding. BaseURL overrides

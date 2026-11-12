@@ -3,7 +3,7 @@ package dingtalk
 import (
 	"strings"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type richElement struct {

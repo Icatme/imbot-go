@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"crypto/md5"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/store"
+	"github.com/Icatme/imbot-go/internal/store"
 )
 
 // QuoteCacheOptions controls local reference history. The zero value enables

@@ -1,27 +1,27 @@
-package wechatbot
+package imbot
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/Icatme/wechatbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/protocol"
 )
 
 var (
 	// ErrNotLoggedIn indicates that no usable credentials are installed.
-	ErrNotLoggedIn = errors.New("wechatbot: not logged in")
+	ErrNotLoggedIn = errors.New("imbot: not logged in")
 	// ErrLoginInProgress indicates that a new authentication attempt could not
 	// start because another attempt is active.
-	ErrLoginInProgress = errors.New("wechatbot: login already in progress")
+	ErrLoginInProgress = errors.New("imbot: login already in progress")
 	// ErrSessionChanged indicates that an operation belongs to an older
 	// authenticated session and was rejected without invalidating the current one.
-	ErrSessionChanged = errors.New("wechatbot: authenticated session changed")
+	ErrSessionChanged = errors.New("imbot: authenticated session changed")
 	// ErrReauthRequired indicates that credentials were invalidated and an
 	// explicit Reauthenticate call is required.
-	ErrReauthRequired = errors.New("wechatbot: reauthentication required")
+	ErrReauthRequired = errors.New("imbot: reauthentication required")
 	// ErrQuoteMediaUnavailable indicates that referenced media was not retained,
 	// expired, exceeded cache limits, or its retained file was removed.
-	ErrQuoteMediaUnavailable = errors.New("wechatbot: quoted media unavailable")
+	ErrQuoteMediaUnavailable = errors.New("imbot: quoted media unavailable")
 )
 
 // APIError describes a non-success iLink API response while preserving the

@@ -1,9 +1,9 @@
-package wechatbot
+package imbot
 
 import (
 	"fmt"
 
-	botlog "github.com/Icatme/wechatbot-go/log"
+	botlog "github.com/Icatme/imbot-go/log"
 )
 
 func (b *Bot) reportError(err error) {

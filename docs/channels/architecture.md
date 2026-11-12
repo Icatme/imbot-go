@@ -1,10 +1,10 @@
 # 国内多通道 Gateway：架构与交付计划
 
-核对日期：2026-11-12。基线：wechatbot-go v0.7.0，main `abcc59906486b506dc68da682c7f643322d37244`。
+核对日期：2026-11-12。原始架构基线为 wechatbot-go v0.7.0；v0.9.0 起项目和模块名称迁移为 imbot-go。
 
 ## 兼容与依赖原则
 
-保留根包 `wechatbot` 的所有现有 API、iLink 登录、Ack/Retry/Drop、游标、重放和媒体语义；不改 module path、go.mod、go.sum，也不把旧客户强制迁移到 Gateway。新增 `gateway` 与 `channels/*` 为可选入口。
+根包 `imbot` 保留原生微信 API、iLink 登录、Ack/Retry/Drop、游标、重放和媒体语义。v0.9.0 明确将模块路径迁移为 `github.com/Icatme/imbot-go`，下游同步修改导入；`gateway` 与 `channels/*` 仍为可选入口，不要求原生微信客户迁移到 Gateway。
 
 平台 SDK 只用于阅读协议和行为对照，不 import、不 vendor、不复制生成代码。新通道使用 Go 标准库；参考仓库、实际核对的文件、协议差异见 [references.md](references.md)。SDK 包版本或提交日期不是功能兼容证明。
 

@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type Config struct {
@@ -376,7 +376,7 @@ func (a *Adapter) connect(ctx context.Context, sink gateway.Sink) error {
 			} `json:"ClientConfig"`
 		} `json:"data"`
 	}
-	if err := wire.JSON(ctx, a.cfg.HTTPClient, "feishu", "POST", a.cfg.BaseURL+"/callback/ws/endpoint", http.Header{"User-Agent": []string{"wechatbot-go/channel"}}, map[string]string{"AppID": a.cfg.AppID, "AppSecret": a.cfg.AppSecret}, &discovery); err != nil {
+	if err := wire.JSON(ctx, a.cfg.HTTPClient, "feishu", "POST", a.cfg.BaseURL+"/callback/ws/endpoint", http.Header{"User-Agent": []string{"imbot-go/channel"}}, map[string]string{"AppID": a.cfg.AppID, "AppSecret": a.cfg.AppSecret}, &discovery); err != nil {
 		return err
 	}
 	if discovery.Code != 0 {

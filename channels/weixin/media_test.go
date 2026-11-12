@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	wechatbot "github.com/Icatme/wechatbot-go"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 func TestDownloadSelectsSpecificMediaAndProtectsLocator(t *testing.T) {
 	a, f := fixture(t)
 	m := incoming()
-	m.Files = []wechatbot.FileContent{{FileName: "first", Media: &wechatbot.CDNMedia{EncryptQueryParam: "first-secret"}}, {FileName: "second", Media: &wechatbot.CDNMedia{EncryptQueryParam: "second-secret"}}}
+	m.Files = []imbot.FileContent{{FileName: "first", Media: &imbot.CDNMedia{EncryptQueryParam: "first-secret"}}, {FileName: "second", Media: &imbot.CDNMedia{EncryptQueryParam: "second-secret"}}}
 	e, err := a.normalize(m)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestUploadSendUsesNativeMediaAndBindsReply(t *testing.T) {
 		t.Fatal(string(raw))
 	}
 	result, err := a.Send(context.Background(), e.Route, gateway.Message{Attachments: []gateway.Attachment{p}, ReplyTo: e.MessageID})
-	if err != nil || !result.Accepted || f.sent.Item.Type != wechatbot.ItemFile || f.sent.Item.FileItem.Media.AESKey != "secret-key" || f.sent.Upload == nil || f.inbound.ContextToken != "secret-context" {
+	if err != nil || !result.Accepted || f.sent.Item.Type != imbot.ItemFile || f.sent.Item.FileItem.Media.AESKey != "secret-key" || f.sent.Upload == nil || f.inbound.ContextToken != "secret-context" {
 		t.Fatal(result, err, f.sent)
 	}
 	if _, err = a.Send(context.Background(), e.Route, gateway.Message{Attachments: []gateway.Attachment{p}}); !errors.Is(err, gateway.ErrInvalidEvent) {
@@ -87,7 +87,7 @@ func TestUploadRejectsBeforeNativeIO(t *testing.T) {
 func TestQuotedDownloadPreservesNativeRecoveryAndErrors(t *testing.T) {
 	a, f := fixture(t)
 	m := incoming()
-	m.QuotedMessage = &wechatbot.QuotedMessage{MessageID: "old", Text: "quoted text", Media: &wechatbot.QuotedMedia{Type: wechatbot.ContentFile, FileName: "old.pdf", Cached: true}}
+	m.QuotedMessage = &imbot.QuotedMessage{MessageID: "old", Text: "quoted text", Media: &imbot.QuotedMedia{Type: imbot.ContentFile, FileName: "old.pdf", Cached: true}}
 	e, err := a.normalize(m)
 	if err != nil {
 		t.Fatal(err)
@@ -95,8 +95,8 @@ func TestQuotedDownloadPreservesNativeRecoveryAndErrors(t *testing.T) {
 	if e.Quote == nil || len(e.Attachments) != 0 || len(e.Quote.Attachments) != 1 {
 		t.Fatal(e)
 	}
-	f.mediaErr = wechatbot.ErrQuoteMediaUnavailable
-	if _, err = a.Download(context.Background(), e.Route, e.Quote.Attachments[0]); !errors.Is(err, wechatbot.ErrQuoteMediaUnavailable) {
+	f.mediaErr = imbot.ErrQuoteMediaUnavailable
+	if _, err = a.Download(context.Background(), e.Route, e.Quote.Attachments[0]); !errors.Is(err, imbot.ErrQuoteMediaUnavailable) {
 		t.Fatal(err)
 	}
 	if !f.quoted || !f.downloaded.QuotedMessage.Media.Cached {
@@ -117,7 +117,7 @@ func TestUploadSendDoesNotExposeCachedMutableResources(t *testing.T) {
 			if _, err = a.Send(context.Background(), e.Route, message); err != nil {
 				t.Fatal(err)
 			}
-			resource := func(out wechatbot.OutboundMessage) *wechatbot.CDNMedia {
+			resource := func(out imbot.OutboundMessage) *imbot.CDNMedia {
 				switch kind {
 				case "image":
 					return out.Item.ImageItem.Media
@@ -143,13 +143,13 @@ func TestUploadSendDoesNotExposeCachedMutableResources(t *testing.T) {
 func TestPartsPreserveVoiceTranscriptOrder(t *testing.T) {
 	a, _ := fixture(t)
 	m := incoming()
-	media := &wechatbot.CDNMedia{EncryptQueryParam: "voice", AESKey: "key"}
-	m.Raw.ItemList = []wechatbot.MessageItem{
-		{Type: wechatbot.ItemText, TextItem: &wechatbot.TextItem{Text: "before"}},
-		{Type: wechatbot.ItemVoice, VoiceItem: &wechatbot.VoiceItem{Media: media, Text: "recognized speech"}},
-		{Type: wechatbot.ItemText, TextItem: &wechatbot.TextItem{Text: "after"}},
+	media := &imbot.CDNMedia{EncryptQueryParam: "voice", AESKey: "key"}
+	m.Raw.ItemList = []imbot.MessageItem{
+		{Type: imbot.ItemText, TextItem: &imbot.TextItem{Text: "before"}},
+		{Type: imbot.ItemVoice, VoiceItem: &imbot.VoiceItem{Media: media, Text: "recognized speech"}},
+		{Type: imbot.ItemText, TextItem: &imbot.TextItem{Text: "after"}},
 	}
-	m.Voices = []wechatbot.VoiceContent{{Media: media, Text: "recognized speech"}}
+	m.Voices = []imbot.VoiceContent{{Media: media, Text: "recognized speech"}}
 	e, err := a.normalize(m)
 	if err != nil {
 		t.Fatal(err)
@@ -162,8 +162,8 @@ func TestPartsPreserveVoiceTranscriptOrder(t *testing.T) {
 func TestVoiceTranscriptWithoutMediaHasNoDownloadReference(t *testing.T) {
 	a, _ := fixture(t)
 	m := incoming()
-	m.Raw.ItemList = []wechatbot.MessageItem{{Type: wechatbot.ItemVoice, VoiceItem: &wechatbot.VoiceItem{Text: "recognized speech"}}}
-	m.Voices = []wechatbot.VoiceContent{{Text: "recognized speech"}}
+	m.Raw.ItemList = []imbot.MessageItem{{Type: imbot.ItemVoice, VoiceItem: &imbot.VoiceItem{Text: "recognized speech"}}}
+	m.Voices = []imbot.VoiceContent{{Text: "recognized speech"}}
 	e, err := a.normalize(m)
 	if err != nil || e.Text != "recognized speech" || len(e.Attachments) != 0 || len(e.Parts) != 1 || e.Parts[0].Text != e.Text {
 		t.Fatalf("transcript-only voice advertised unavailable audio: %+v, %v", e, err)

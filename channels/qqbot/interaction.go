@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 // Interaction IDs cannot be used as QQ passive-reply message IDs. Preserve that

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/enrollment"
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/channels/onboarding"
+	"github.com/Icatme/imbot-go/channels/internal/enrollment"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/channels/onboarding"
 )
 
 const registrationPath = "/oauth/v1/app/registration"

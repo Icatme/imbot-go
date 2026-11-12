@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 // The official C2C/group send contract requires a nonempty content field for

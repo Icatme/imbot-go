@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/onboarding"
+	"github.com/Icatme/imbot-go/channels/onboarding"
 )
 
 func args(platform, path string) []string {

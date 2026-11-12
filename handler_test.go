@@ -1,4 +1,4 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/auth"
 )
 
 func TestMessageResultValidation(t *testing.T) {

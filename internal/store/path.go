@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// DefaultStateDir returns ~/.wechatbot.
+// DefaultStateDir returns ~/.wechatbot. The module rename preserves stored sessions.
 func DefaultStateDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {

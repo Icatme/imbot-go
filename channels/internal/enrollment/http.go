@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/channels/onboarding"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/channels/onboarding"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 func PostJSON(ctx context.Context, client *http.Client, platform, endpoint string, input, output any) error {

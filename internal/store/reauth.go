@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/Icatme/wechatbot-go/internal/persist"
+	"github.com/Icatme/imbot-go/internal/persist"
 )
 
 const reauthStateVersion = 1

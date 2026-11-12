@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"path"
 
-	"github.com/Icatme/wechatbot-go/internal/redact"
+	"github.com/Icatme/imbot-go/internal/redact"
 )
 
 const maxDownloadBytes = 100 * 1024 * 1024

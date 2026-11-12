@@ -1,4 +1,4 @@
-module github.com/Icatme/wechatbot-go
+module github.com/Icatme/imbot-go
 
 // Go toolchain/language version. The iLink fallback protocol version lives in
 // internal/protocol.ChannelVersion and release tags provide module versions.

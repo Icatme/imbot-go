@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type mediaRoundTrip func(*http.Request) (*http.Response, error)

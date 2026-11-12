@@ -1,15 +1,15 @@
-package wechatbot
+package imbot
 
 import (
 	"context"
 	"path/filepath"
 	"sync"
 
-	"github.com/Icatme/wechatbot-go/internal/auth"
-	"github.com/Icatme/wechatbot-go/internal/config"
-	"github.com/Icatme/wechatbot-go/internal/protocol"
-	"github.com/Icatme/wechatbot-go/internal/store"
-	botlog "github.com/Icatme/wechatbot-go/log"
+	"github.com/Icatme/imbot-go/internal/auth"
+	"github.com/Icatme/imbot-go/internal/config"
+	"github.com/Icatme/imbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/internal/store"
+	botlog "github.com/Icatme/imbot-go/log"
 )
 
 // Options configures a Bot instance.

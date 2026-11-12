@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 func TestUnauthorizedMediaAndInteractionRefreshOnlyOnExplicitCall(t *testing.T) {

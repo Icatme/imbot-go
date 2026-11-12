@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/Icatme/wechatbot-go/internal/persist"
+	"github.com/Icatme/imbot-go/internal/persist"
 )
 
 // CursorStore persists the get_updates_buf cursor so the bot can resume polling after a restart.

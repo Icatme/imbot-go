@@ -11,30 +11,30 @@ import (
 	"strings"
 	"time"
 
-	wechatbot "github.com/Icatme/wechatbot-go"
-	"github.com/Icatme/wechatbot-go/channels/internal/wire"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go"
+	"github.com/Icatme/imbot-go/channels/internal/wire"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type client interface {
-	Handle(wechatbot.MessageHandler)
+	Handle(imbot.MessageHandler)
 	Run(context.Context) error
-	ReplyMessage(context.Context, *wechatbot.IncomingMessage, wechatbot.OutboundMessage) (wechatbot.SendResult, error)
-	SendMessage(context.Context, string, wechatbot.OutboundMessage) (wechatbot.SendResult, error)
-	DownloadRaw(context.Context, *wechatbot.CDNMedia, string) ([]byte, error)
-	DownloadImage(context.Context, wechatbot.ImageContent) ([]byte, error)
-	DownloadQuoted(context.Context, *wechatbot.IncomingMessage) (*wechatbot.DownloadedMedia, error)
-	Upload(context.Context, []byte, string, int) (*wechatbot.UploadResult, error)
-	UploadForReply(context.Context, *wechatbot.IncomingMessage, []byte, int) (*wechatbot.UploadResult, error)
+	ReplyMessage(context.Context, *imbot.IncomingMessage, imbot.OutboundMessage) (imbot.SendResult, error)
+	SendMessage(context.Context, string, imbot.OutboundMessage) (imbot.SendResult, error)
+	DownloadRaw(context.Context, *imbot.CDNMedia, string) ([]byte, error)
+	DownloadImage(context.Context, imbot.ImageContent) ([]byte, error)
+	DownloadQuoted(context.Context, *imbot.IncomingMessage) (*imbot.DownloadedMedia, error)
+	Upload(context.Context, []byte, string, int) (*imbot.UploadResult, error)
+	UploadForReply(context.Context, *imbot.IncomingMessage, []byte, int) (*imbot.UploadResult, error)
 }
 
-var _ client = (*wechatbot.Bot)(nil)
+var _ client = (*imbot.Bot)(nil)
 
 type Config struct {
 	AccountID            string
-	Bot                  *wechatbot.Bot // already configured/logged in by the application
-	TakeHandlerOwnership bool           // required: Run installs the sole native handler
-	EnableProactive      bool           // still requires the original SDK's valid peer context
+	Bot                  *imbot.Bot // already configured/logged in by the application
+	TakeHandlerOwnership bool       // required: Run installs the sole native handler
+	EnableProactive      bool       // still requires the original SDK's valid peer context
 	ReplyTTL             time.Duration
 	OnError              func(error)
 }
@@ -42,7 +42,7 @@ type Adapter struct {
 	cfg     Config
 	bot     client
 	guard   wire.Guard
-	replies *wire.Cache[*wechatbot.IncomingMessage]
+	replies *wire.Cache[*imbot.IncomingMessage]
 	media   *wire.Cache[mediaEntry]
 }
 
@@ -56,7 +56,7 @@ func New(c Config) (*Adapter, error) {
 	if c.ReplyTTL > time.Hour {
 		return nil, errors.New("weixin: reply TTL exceeds one hour")
 	}
-	return &Adapter{cfg: c, bot: c.Bot, replies: wire.NewCache[*wechatbot.IncomingMessage](4096), media: wire.NewCache[mediaEntry](4096)}, nil
+	return &Adapter{cfg: c, bot: c.Bot, replies: wire.NewCache[*imbot.IncomingMessage](4096), media: wire.NewCache[mediaEntry](4096)}, nil
 }
 func (a *Adapter) Account() gateway.Account {
 	return gateway.Account{Platform: "weixin", ID: a.cfg.AccountID}
@@ -72,12 +72,12 @@ func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 		return err
 	}
 	defer a.guard.Leave()
-	a.bot.Handle(wechatbot.MessageHandlerFunc(func(ctx context.Context, m *wechatbot.IncomingMessage) wechatbot.MessageResult {
+	a.bot.Handle(imbot.MessageHandlerFunc(func(ctx context.Context, m *imbot.IncomingMessage) imbot.MessageResult {
 		return a.handle(ctx, m, sink)
 	}))
 	return a.bot.Run(ctx) // preserve native reauthentication, cancellation and retry errors
 }
-func (a *Adapter) handle(ctx context.Context, m *wechatbot.IncomingMessage, sink gateway.Sink) wechatbot.MessageResult {
+func (a *Adapter) handle(ctx context.Context, m *imbot.IncomingMessage, sink gateway.Sink) imbot.MessageResult {
 	e, err := a.normalize(m)
 	if errors.Is(err, gateway.ErrUnsupported) {
 		wire.ReportUnsupported(err, a.cfg.OnError)
@@ -86,14 +86,14 @@ func (a *Adapter) handle(ctx context.Context, m *wechatbot.IncomingMessage, sink
 		err = sink(ctx, e)
 	}
 	if err == nil {
-		return wechatbot.AckMessage()
+		return imbot.AckMessage()
 	}
 	if errors.Is(err, gateway.ErrUnauthorized) || errors.Is(err, gateway.ErrUnsupported) {
-		return wechatbot.DropMessage(err)
+		return imbot.DropMessage(err)
 	}
-	return wechatbot.RetryMessage(err)
+	return imbot.RetryMessage(err)
 }
-func (a *Adapter) normalize(m *wechatbot.IncomingMessage) (gateway.Event, error) {
+func (a *Adapter) normalize(m *imbot.IncomingMessage) (gateway.Event, error) {
 	if m == nil || m.Raw == nil || m.UserID == "" {
 		return gateway.Event{}, gateway.ErrInvalidEvent
 	}
@@ -142,10 +142,10 @@ func (a *Adapter) normalize(m *wechatbot.IncomingMessage) (gateway.Event, error)
 	e := gateway.Event{ID: id, MessageID: id, Route: r, SenderID: m.UserID, Time: m.Timestamp, Native: &native}
 	var text []string
 	for _, p := range m.Raw.ItemList {
-		if p.Type == wechatbot.ItemText && p.TextItem != nil {
+		if p.Type == imbot.ItemText && p.TextItem != nil {
 			text = append(text, p.TextItem.Text)
 		}
-		if p.Type == wechatbot.ItemVoice && p.VoiceItem != nil && p.VoiceItem.Text != "" {
+		if p.Type == imbot.ItemVoice && p.VoiceItem != nil && p.VoiceItem.Text != "" {
 			text = append(text, p.VoiceItem.Text)
 		}
 	}
@@ -211,7 +211,7 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 	if r.TenantID != "" || r.Kind != "direct" || m.Format == "markdown" || len(m.Card) > 0 {
 		return gateway.Receipt{}, gateway.ErrUnsupported
 	}
-	outbound := wechatbot.OutboundMessage{ClientID: m.ClientID, Item: wechatbot.MessageItem{Type: wechatbot.ItemText, TextItem: &wechatbot.TextItem{Text: m.Text}}}
+	outbound := imbot.OutboundMessage{ClientID: m.ClientID, Item: imbot.MessageItem{Type: imbot.ItemText, TextItem: &imbot.TextItem{Text: m.Text}}}
 	if len(m.Attachments) > 0 {
 		if len(m.Attachments) != 1 || m.Text != "" {
 			return gateway.Receipt{}, gateway.ErrUnsupported
@@ -225,7 +225,7 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 		}
 		outbound = entry.copyOutbound(m.ClientID)
 	}
-	var result wechatbot.SendResult
+	var result imbot.SendResult
 	var err error
 	if m.ReplyTo != "" {
 		native, ok := a.replies.Get(wire.ContextKey(r, m.ReplyTo))

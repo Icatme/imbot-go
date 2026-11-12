@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/internal/persist"
+	"github.com/Icatme/imbot-go/internal/persist"
 )
 
 const (

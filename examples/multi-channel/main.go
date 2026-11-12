@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Icatme/wechatbot-go/channels/dingtalk"
-	"github.com/Icatme/wechatbot-go/channels/feishu"
-	"github.com/Icatme/wechatbot-go/channels/qqbot"
-	"github.com/Icatme/wechatbot-go/channels/wecom"
-	"github.com/Icatme/wechatbot-go/channels/wecomapp"
-	"github.com/Icatme/wechatbot-go/gateway"
+	"github.com/Icatme/imbot-go/channels/dingtalk"
+	"github.com/Icatme/imbot-go/channels/feishu"
+	"github.com/Icatme/imbot-go/channels/qqbot"
+	"github.com/Icatme/imbot-go/channels/wecom"
+	"github.com/Icatme/imbot-go/channels/wecomapp"
+	"github.com/Icatme/imbot-go/gateway"
 )
 
 type principal struct {
