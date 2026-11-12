@@ -221,7 +221,7 @@ type IncomingMessage struct {
 	Raw               *WireMessage
 	ContextToken      string // internal, managed by SDK
 	sessionGeneration uint64
-	sessionBound      bool
+	sessionBot        *Bot
 }
 
 // ImageContent holds parsed image data from a message.
@@ -294,12 +294,24 @@ type DownloadedMedia struct {
 	MIMEType string
 }
 
-// UploadResult is the result of uploading media to CDN.
+// UploadResult is the result of uploading media to CDN. Set OutboundMessage.Upload
+// when sending it to enforce its original Bot, session and recipient. The private
+// binding is process-local; a JSON-restored result cannot be used as a bound upload.
 type UploadResult struct {
 	Media             CDNMedia
 	ThumbMedia        CDNMedia
 	AESKey            []byte
 	EncryptedFileSize int
+	binding           *uploadBinding
+}
+
+type uploadBinding struct {
+	bot        *Bot
+	generation uint64
+	userID     string
+	mediaType  int
+	media      CDNMedia
+	thumb      CDNMedia
 }
 
 // Credentials holds login credentials.

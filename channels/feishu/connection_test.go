@@ -22,8 +22,15 @@ import (
 // Exercise endpoint discovery, the actual WebSocket upgrade, protobuf
 // fragmentation and admission ACKs together, independently of frame round trips.
 func TestWebSocketAdmission(t *testing.T) {
-	for _, fail := range []bool{false, true} {
-		t.Run(fmt.Sprintf("admission_failure=%t", fail), func(t *testing.T) {
+	for _, tc := range []struct {
+		name                                 string
+		fail, post, unknown, card, cardFrame bool
+	}{
+		{name: "text"}, {name: "sink_failure", fail: true}, {name: "post", post: true}, {name: "unknown", unknown: true},
+		{name: "card_event", card: true}, {name: "card_frame", card: true, cardFrame: true}, {name: "card_sink_failure", card: true, fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fail := tc.fail
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			peerDone := make(chan error, 1)
@@ -54,8 +61,21 @@ func TestWebSocketAdmission(t *testing.T) {
 						return fmt.Errorf("invalid ping: %+v", ping)
 					}
 					body := payload()
+					if tc.post {
+						body = messagePayload("post", mixedPost)
+					}
+					if tc.unknown {
+						body = messagePayload("future-format", `{}`)
+					}
+					if tc.card {
+						body = cardPayload()
+					}
+					frameType := "event"
+					if tc.cardFrame {
+						frameType = "card"
+					}
 					for i, p := range [][]byte{body[:len(body)/2], body[len(body)/2:]} {
-						f := frame{Seq: uint64(40 + i), Log: 55, Service: 123, Method: 1, Headers: map[string]string{"type": "event", "message_id": "delivery", "sum": "2", "seq": fmt.Sprint(i)}, Payload: p}
+						f := frame{Seq: uint64(40 + i), Log: 55, Service: 123, Method: 1, Headers: map[string]string{"type": frameType, "message_id": "delivery", "sum": "2", "seq": fmt.Sprint(i)}, Payload: p}
 						b := f.encode()
 						h := []byte{0x82, 126, byte(len(b) >> 8), byte(len(b))}
 						if len(b) < 126 {
@@ -73,7 +93,8 @@ func TestWebSocketAdmission(t *testing.T) {
 						return err
 					}
 					var result struct {
-						Code int `json:"code"`
+						Code int    `json:"code"`
+						Data []byte `json:"data"`
 					}
 					if err := json.Unmarshal(ack.Payload, &result); err != nil {
 						return err
@@ -81,6 +102,9 @@ func TestWebSocketAdmission(t *testing.T) {
 					want := 200
 					if fail {
 						want = 500
+					}
+					if tc.card && !fail && string(result.Data) != "{}" {
+						return fmt.Errorf("missing card action response: %s", ack.Payload)
 					}
 					if ack.Seq != 41 || ack.Log != 55 || ack.Service != 123 || ack.Headers["message_id"] != "delivery" || result.Code != want {
 						return fmt.Errorf("invalid ACK: %+v payload=%s", ack, ack.Payload)
@@ -94,12 +118,31 @@ func TestWebSocketAdmission(t *testing.T) {
 			serverURL = s.URL
 			a := testAdapter(t)
 			a.cfg.BaseURL = s.URL
+			a.rememberCardRoute(cardRoute(a), "msg")
+			reports := 0
+			a.cfg.OnError = func(err error) {
+				var unsupported *gateway.UnsupportedMessageError
+				if !errors.As(err, &unsupported) || unsupported.MessageType != "future-format" {
+					t.Errorf("unexpected diagnostic: %v", err)
+				}
+				reports++
+			}
 			clientDone := make(chan error, 1)
 			calls := 0
 			go func() {
 				clientDone <- a.connect(ctx, func(_ context.Context, e gateway.Event) error {
 					calls++
-					if e.MessageID != "msg" || e.Text != "你好" {
+					wantText := "你好"
+					if tc.post {
+						wantText = "主题\n看图和文件\n链接 (https://example.com)"
+					}
+					if tc.card {
+						wantText = ""
+						if e.Interaction == nil || e.Route != cardRoute(a) {
+							return errors.New("card interaction lost its route")
+						}
+					}
+					if e.MessageID != "msg" || e.Text != wantText {
 						return fmt.Errorf("incorrect assembled event: %+v", e)
 					}
 					if fail {
@@ -120,8 +163,12 @@ func TestWebSocketAdmission(t *testing.T) {
 			}
 			select {
 			case <-clientDone:
-				if calls != 1 {
-					t.Errorf("admissions = %d, want 1", calls)
+				wantCalls, wantReports := 1, 0
+				if tc.unknown {
+					wantCalls, wantReports = 0, 1
+				}
+				if calls != wantCalls || reports != wantReports {
+					t.Errorf("admissions=%d diagnostics=%d, want %d/%d", calls, reports, wantCalls, wantReports)
 				}
 			case <-time.After(time.Second):
 				t.Fatal("connect did not exit on cancellation")

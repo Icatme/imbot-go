@@ -63,16 +63,28 @@ func (s *session) deliver(f frame) {
 // request serializes repeated req_ids. A timeout closes this connection so a
 // late ACK cannot be attributed to a newer update using the same reply req_id.
 func (s *session) request(ctx context.Context, cmd, id string, body any) (gateway.Receipt, error) {
-	if err := ctx.Err(); err != nil {
+	f, err := s.requestFrame(ctx, cmd, id, body, s.timeout)
+	if err != nil {
 		return gateway.Receipt{}, err
+	}
+	var b struct {
+		ID string `json:"msgid"`
+	}
+	_ = json.Unmarshal(f.Body, &b)
+	return gateway.Receipt{MessageID: b.ID, Accepted: true}, nil
+}
+
+func (s *session) requestFrame(ctx context.Context, cmd, id string, body any, timeout time.Duration) (frame, error) {
+	if err := ctx.Err(); err != nil {
+		return frame{}, err
 	}
 	select {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
 	default:
-		return gateway.Receipt{}, gateway.ErrBusy
+		return frame{}, gateway.ErrBusy
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	s.mu.Lock()
 	l := s.lanes[id]
@@ -94,28 +106,28 @@ func (s *session) request(ctx context.Context, cmd, id string, body any) (gatewa
 	case l.gate <- struct{}{}:
 		defer func() { <-l.gate }()
 	case <-ctx.Done():
-		return gateway.Receipt{}, ctx.Err()
+		return frame{}, ctx.Err()
 	case <-s.ctx.Done():
-		return gateway.Receipt{}, errors.New("wecom: connection closed")
+		return frame{}, errors.New("wecom: connection closed")
 	}
 	// A cancelled waiter may win the gate select. It has not sent anything and
 	// must not tear down the connection or report an uncertain delivery.
 	if err := ctx.Err(); err != nil {
-		return gateway.Receipt{}, err
+		return frame{}, err
 	}
 	if s.ctx.Err() != nil {
-		return gateway.Receipt{}, errors.New("wecom: connection closed")
+		return frame{}, errors.New("wecom: connection closed")
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
-		return gateway.Receipt{}, err
+		return frame{}, err
 	}
 	if body == nil {
 		data = nil
 	}
 	raw, err := json.Marshal(frame{Cmd: cmd, Headers: map[string]string{"req_id": id}, Body: data})
 	if err != nil {
-		return gateway.Receipt{}, err
+		return frame{}, err
 	}
 	ch := make(chan frame, 1)
 	s.mu.Lock()
@@ -124,26 +136,22 @@ func (s *session) request(ctx context.Context, cmd, id string, body any) (gatewa
 	defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
 	if err = s.socket.Write(ctx, 1, raw); err != nil {
 		s.close()
-		return gateway.Receipt{}, &gateway.APIError{Platform: "wecom", Code: "write", Uncertain: true}
+		return frame{}, errors.Join(&gateway.APIError{Platform: "wecom", Code: "write", Uncertain: true}, ctx.Err())
 	}
 	select {
 	case f := <-ch:
 		if f.Code == nil {
 			s.close()
-			return gateway.Receipt{}, &gateway.APIError{Platform: "wecom", Code: "missing_ack_code", Uncertain: true}
+			return frame{}, &gateway.APIError{Platform: "wecom", Code: "missing_ack_code", Uncertain: true}
 		}
 		if *f.Code != 0 {
-			return gateway.Receipt{}, &gateway.APIError{Platform: "wecom", Code: fmt.Sprint(*f.Code)}
+			return frame{}, &gateway.APIError{Platform: "wecom", Code: fmt.Sprint(*f.Code)}
 		}
-		var b struct {
-			ID string `json:"msgid"`
-		}
-		_ = json.Unmarshal(f.Body, &b)
-		return gateway.Receipt{MessageID: b.ID, Accepted: true}, nil
+		return f, nil
 	case <-ctx.Done():
 		s.close()
-		return gateway.Receipt{}, &gateway.APIError{Platform: "wecom", Code: "ack_timeout", Uncertain: true}
+		return frame{}, errors.Join(&gateway.APIError{Platform: "wecom", Code: "ack_timeout", Uncertain: true}, ctx.Err())
 	case <-s.ctx.Done():
-		return gateway.Receipt{}, &gateway.APIError{Platform: "wecom", Code: "disconnected", Uncertain: true}
+		return frame{}, errors.Join(&gateway.APIError{Platform: "wecom", Code: "disconnected", Uncertain: true}, ctx.Err())
 	}
 }

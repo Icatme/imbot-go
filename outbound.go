@@ -1,6 +1,7 @@
 package wechatbot
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -18,6 +19,9 @@ type OutboundMessage struct {
 	ClientID string
 	RunID    string
 	Item     MessageItem
+	// Upload binds Item's uploaded resource to its original Bot, session and user.
+	// BeforeSend may edit display metadata, but cannot remove or replace this binding.
+	Upload *UploadResult
 }
 
 // SendResult identifies the outbound request. It is returned even when the
@@ -104,6 +108,12 @@ func (b *Bot) SendMessage(ctx context.Context, userID string, msg OutboundMessag
 	if err != nil {
 		return SendResult{}, err
 	}
+	if err := b.validateUpload(msg, sessionGeneration, userID); err != nil {
+		return SendResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return SendResult{}, err
+	}
 	contextToken := b.contextTokens.Get(userID)
 	result, err := b.sendMessage(ctx, sessionGeneration, userID, contextToken, msg, nil)
 	if err != nil {
@@ -122,7 +132,13 @@ func (b *Bot) ReplyMessage(ctx context.Context, inbound *IncomingMessage, msg Ou
 	if err != nil {
 		return SendResult{}, err
 	}
+	if err := b.validateUpload(msg, sessionGeneration, inbound.UserID); err != nil {
+		return SendResult{}, err
+	}
 	if err := requireContextToken(inbound.UserID, inbound.ContextToken); err != nil {
+		return SendResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return SendResult{}, err
 	}
 	if err := b.persistContextToken(sessionGeneration, inbound.UserID, inbound.ContextToken); err != nil {
@@ -146,6 +162,24 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 	if err != nil {
 		return SendResult{}, err
 	}
+	if err := b.validateUpload(msg, sessionGeneration, userID); err != nil {
+		return SendResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return SendResult{}, err
+	}
+	// Hooks may edit one attempt, but cannot mutate the caller's reusable message
+	// graph or upload. Preserve the immutable private binding identity as well
+	// as the wrapper identity: assigning another UploadResult through the wrapper
+	// must not silently replace the resource that was validated above.
+	msg.Item = cloneMessageItemGraph(msg.Item)
+	var validatedUploadBinding *uploadBinding
+	if msg.Upload != nil {
+		copy := *msg.Upload
+		copy.AESKey = bytes.Clone(copy.AESKey)
+		msg.Upload = &copy
+		validatedUploadBinding = copy.binding
+	}
 	if msg.ClientID == "" {
 		clientID, err := newClientID()
 		if err != nil {
@@ -162,13 +196,22 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 	if err := b.hooks.BeforeSend.Run(&request); err != nil {
 		return result, fmt.Errorf("BeforeSend hook failed: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	if request.UserID != validatedUserID {
 		return result, fmt.Errorf("BeforeSend hook cannot change user ID")
 	}
 	if request.Message.ClientID != validatedClientID {
 		return result, fmt.Errorf("BeforeSend hook cannot change client ID")
 	}
-	request.Message.Item = cloneMessageItemTextGraph(request.Message.Item)
+	if request.Message.Upload != msg.Upload || (request.Message.Upload != nil && request.Message.Upload.binding != validatedUploadBinding) {
+		return result, fmt.Errorf("BeforeSend hook cannot change upload binding")
+	}
+	if err := b.validateUpload(request.Message, sessionGeneration, userID); err != nil {
+		return result, err
+	}
+	request.Message.Item = cloneMessageItemGraph(request.Message.Item)
 	normalizeMessageItemText(&request.Message.Item, make(map[*MessageItem]struct{}))
 	if err := validateOutboundMessage(request.Message); err != nil {
 		return result, err
@@ -213,13 +256,44 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 	return result, sendErr
 }
 
-func cloneMessageItemTextGraph(item MessageItem) MessageItem {
+func (b *Bot) validateUpload(msg OutboundMessage, generation uint64, userID string) error {
+	if msg.Upload == nil {
+		return nil
+	}
+	bound := msg.Upload.binding
+	if bound == nil || bound.bot != b || bound.userID != userID {
+		return fmt.Errorf("upload does not belong to this Bot and recipient")
+	}
+	if bound.generation != generation {
+		return ErrSessionChanged
+	}
+	var media, thumb *CDNMedia
+	switch {
+	case bound.mediaType == int(MediaImage) && msg.Item.Type == ItemImage && msg.Item.ImageItem != nil:
+		if msg.Item.ImageItem.AESKey != "" || msg.Item.ImageItem.URL != "" {
+			return fmt.Errorf("uploaded image resource cannot be replaced")
+		}
+		media, thumb = msg.Item.ImageItem.Media, msg.Item.ImageItem.ThumbMedia
+	case bound.mediaType == int(MediaVideo) && msg.Item.Type == ItemVideo && msg.Item.VideoItem != nil:
+		media, thumb = msg.Item.VideoItem.Media, msg.Item.VideoItem.ThumbMedia
+	case bound.mediaType == int(MediaFile) && msg.Item.Type == ItemFile && msg.Item.FileItem != nil:
+		media = msg.Item.FileItem.Media
+	case bound.mediaType == int(MediaVoice) && msg.Item.Type == ItemVoice && msg.Item.VoiceItem != nil:
+		media = msg.Item.VoiceItem.Media
+	}
+	if media == nil || *media != bound.media || (thumb != nil && *thumb != bound.thumb) || (thumb == nil && bound.thumb != (CDNMedia{})) {
+		return fmt.Errorf("message does not contain the bound uploaded resource")
+	}
+	return nil
+}
+
+func cloneMessageItemGraph(item MessageItem) MessageItem {
 	clone := item
-	cloneMessageItemTextPointers(&clone, &item, make(map[*MessageItem]*MessageItem))
+	cloneMessageItemPointers(&clone, &item, make(map[*MessageItem]*MessageItem))
 	return clone
 }
 
-func cloneMessageItemTextPointer(item *MessageItem, visited map[*MessageItem]*MessageItem) *MessageItem {
+func cloneMessageItemPointer(item *MessageItem, visited map[*MessageItem]*MessageItem) *MessageItem {
 	if item == nil {
 		return nil
 	}
@@ -229,20 +303,64 @@ func cloneMessageItemTextPointer(item *MessageItem, visited map[*MessageItem]*Me
 	clone := new(MessageItem)
 	visited[item] = clone
 	*clone = *item
-	cloneMessageItemTextPointers(clone, item, visited)
+	cloneMessageItemPointers(clone, item, visited)
 	return clone
 }
 
-func cloneMessageItemTextPointers(clone, item *MessageItem, visited map[*MessageItem]*MessageItem) {
+func cloneMessageItemPointers(clone, item *MessageItem, visited map[*MessageItem]*MessageItem) {
+	if item.IsCompleted != nil {
+		v := *item.IsCompleted
+		clone.IsCompleted = &v
+	}
 	if item.TextItem != nil {
 		textItem := *item.TextItem
 		clone.TextItem = &textItem
 	}
+	if p := item.ImageItem; p != nil {
+		v := *p
+		v.Media, v.ThumbMedia = cloneOutboundCDN(p.Media), cloneOutboundCDN(p.ThumbMedia)
+		clone.ImageItem = &v
+	}
+	if p := item.VoiceItem; p != nil {
+		v := *p
+		v.Media = cloneOutboundCDN(p.Media)
+		clone.VoiceItem = &v
+	}
+	if p := item.FileItem; p != nil {
+		v := *p
+		v.Media = cloneOutboundCDN(p.Media)
+		clone.FileItem = &v
+	}
+	if p := item.VideoItem; p != nil {
+		v := *p
+		v.Media, v.ThumbMedia = cloneOutboundCDN(p.Media), cloneOutboundCDN(p.ThumbMedia)
+		clone.VideoItem = &v
+	}
+	if p := item.ToolCallStartItem; p != nil {
+		v := *p
+		clone.ToolCallStartItem = &v
+	}
+	if p := item.ToolCallResultItem; p != nil {
+		v := *p
+		clone.ToolCallResultItem = &v
+	}
 	if item.RefMsg != nil {
 		refMsg := *item.RefMsg
-		refMsg.MessageItem = cloneMessageItemTextPointer(item.RefMsg.MessageItem, visited)
+		refMsg.MessageItem = cloneMessageItemPointer(item.RefMsg.MessageItem, visited)
+		if refMsg.PartialText != nil {
+			v := *refMsg.PartialText
+			refMsg.PartialText = &v
+		}
 		clone.RefMsg = &refMsg
 	}
+}
+
+func cloneOutboundCDN(media *CDNMedia) *CDNMedia {
+	if media == nil {
+		return nil
+	}
+	copy := *media
+	return &copy
 }
 
 func normalizeMessageItemText(item *MessageItem, visited map[*MessageItem]struct{}) {

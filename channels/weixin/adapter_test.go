@@ -13,10 +13,15 @@ import (
 )
 
 type fakeClient struct {
-	handler wechatbot.MessageHandler
-	inbound *wechatbot.IncomingMessage
-	sent    wechatbot.OutboundMessage
-	user    string
+	handler    wechatbot.MessageHandler
+	inbound    *wechatbot.IncomingMessage
+	sent       wechatbot.OutboundMessage
+	user       string
+	downloaded *wechatbot.IncomingMessage
+	rawMedia   *wechatbot.CDNMedia
+	quoted     bool
+	uploads    int
+	mediaErr   error
 }
 
 func (f *fakeClient) Handle(h wechatbot.MessageHandler) { f.handler = h }
@@ -30,6 +35,26 @@ func (f *fakeClient) SendMessage(_ context.Context, u string, out wechatbot.Outb
 	f.user = u
 	f.sent = out
 	return wechatbot.SendResult{MessageID: "receipt"}, nil
+}
+func (f *fakeClient) DownloadRaw(_ context.Context, m *wechatbot.CDNMedia, _ string) ([]byte, error) {
+	f.rawMedia = m
+	return []byte("download"), f.mediaErr
+}
+func (f *fakeClient) DownloadImage(ctx context.Context, image wechatbot.ImageContent) ([]byte, error) {
+	return f.DownloadRaw(ctx, image.Media, image.AESKey)
+}
+func (f *fakeClient) DownloadQuoted(_ context.Context, m *wechatbot.IncomingMessage) (*wechatbot.DownloadedMedia, error) {
+	f.quoted = true
+	f.downloaded = m
+	return &wechatbot.DownloadedMedia{Data: []byte("download"), FileName: "file.pdf", MIMEType: "application/pdf"}, f.mediaErr
+}
+func (f *fakeClient) Upload(_ context.Context, _ []byte, _ string, _ int) (*wechatbot.UploadResult, error) {
+	f.uploads++
+	return &wechatbot.UploadResult{Media: wechatbot.CDNMedia{EncryptQueryParam: "private-location", AESKey: "secret-key"}, EncryptedFileSize: 32}, f.mediaErr
+}
+func (f *fakeClient) UploadForReply(ctx context.Context, m *wechatbot.IncomingMessage, data []byte, kind int) (*wechatbot.UploadResult, error) {
+	f.inbound = m
+	return f.Upload(ctx, data, m.UserID, kind)
 }
 func fixture(t *testing.T) (*Adapter, *fakeClient) {
 	t.Helper()

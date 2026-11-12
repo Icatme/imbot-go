@@ -21,6 +21,11 @@ type client interface {
 	Run(context.Context) error
 	ReplyMessage(context.Context, *wechatbot.IncomingMessage, wechatbot.OutboundMessage) (wechatbot.SendResult, error)
 	SendMessage(context.Context, string, wechatbot.OutboundMessage) (wechatbot.SendResult, error)
+	DownloadRaw(context.Context, *wechatbot.CDNMedia, string) ([]byte, error)
+	DownloadImage(context.Context, wechatbot.ImageContent) ([]byte, error)
+	DownloadQuoted(context.Context, *wechatbot.IncomingMessage) (*wechatbot.DownloadedMedia, error)
+	Upload(context.Context, []byte, string, int) (*wechatbot.UploadResult, error)
+	UploadForReply(context.Context, *wechatbot.IncomingMessage, []byte, int) (*wechatbot.UploadResult, error)
 }
 
 var _ client = (*wechatbot.Bot)(nil)
@@ -31,12 +36,14 @@ type Config struct {
 	TakeHandlerOwnership bool           // required: Run installs the sole native handler
 	EnableProactive      bool           // still requires the original SDK's valid peer context
 	ReplyTTL             time.Duration
+	OnError              func(error)
 }
 type Adapter struct {
 	cfg     Config
 	bot     client
 	guard   wire.Guard
 	replies *wire.Cache[*wechatbot.IncomingMessage]
+	media   *wire.Cache[mediaEntry]
 }
 
 func New(c Config) (*Adapter, error) {
@@ -49,13 +56,13 @@ func New(c Config) (*Adapter, error) {
 	if c.ReplyTTL > time.Hour {
 		return nil, errors.New("weixin: reply TTL exceeds one hour")
 	}
-	return &Adapter{cfg: c, bot: c.Bot, replies: wire.NewCache[*wechatbot.IncomingMessage](4096)}, nil
+	return &Adapter{cfg: c, bot: c.Bot, replies: wire.NewCache[*wechatbot.IncomingMessage](4096), media: wire.NewCache[mediaEntry](4096)}, nil
 }
 func (a *Adapter) Account() gateway.Account {
 	return gateway.Account{Platform: "weixin", ID: a.cfg.AccountID}
 }
 func (a *Adapter) Capabilities() gateway.Capabilities {
-	return gateway.Capabilities{Text: true, Reply: true, ReceiveMedia: true, Proactive: a.cfg.EnableProactive}
+	return gateway.Capabilities{Text: true, Reply: true, ReceiveMedia: true, SendMedia: true, DownloadMedia: true, UploadMedia: true, Proactive: a.cfg.EnableProactive, MaxTextBytes: 2000}
 }
 func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 	if sink == nil {
@@ -72,6 +79,9 @@ func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 }
 func (a *Adapter) handle(ctx context.Context, m *wechatbot.IncomingMessage, sink gateway.Sink) wechatbot.MessageResult {
 	e, err := a.normalize(m)
+	if errors.Is(err, gateway.ErrUnsupported) {
+		wire.ReportUnsupported(err, a.cfg.OnError)
+	}
 	if err == nil {
 		err = sink(ctx, e)
 	}
@@ -125,6 +135,10 @@ func (a *Adapter) normalize(m *wechatbot.IncomingMessage) (gateway.Event, error)
 	// Native is a separate shallow copy; mutating its scalar routing fields cannot
 	// change the cached reply target/context token.
 	saved, native := *m, *m
+	if m.Raw != nil {
+		raw := *m.Raw
+		saved.Raw = &raw
+	}
 	e := gateway.Event{ID: id, MessageID: id, Route: r, SenderID: m.UserID, Time: m.Timestamp, Native: &native}
 	var text []string
 	for _, p := range m.Raw.ItemList {
@@ -141,26 +155,52 @@ func (a *Adapter) normalize(m *wechatbot.IncomingMessage) (gateway.Event, error)
 	}
 	e.Text = strings.Join(text, "\n")
 	add := func(kind string, index int, name string, size int64) {
-		e.Attachments = append(e.Attachments, gateway.Attachment{Kind: kind, Ref: id + ":" + kind + ":" + strconv.Itoa(index), Name: name, Size: size})
+		e.Attachments = append(e.Attachments, a.rememberMedia(r, id, kind, index, name, size, m))
 	}
-	for i := range m.Images {
+	for i, image := range m.Images {
+		if (image.Media != nil && !hasMediaLocator(image.Media)) || (image.Media == nil && image.URL == "") {
+			return gateway.Event{}, gateway.ErrInvalidEvent
+		}
 		add("image", i, "", 0)
 	}
-	for i := range m.Voices {
+	for i, voice := range m.Voices {
+		if voice.Media == nil {
+			if voice.Text == "" {
+				return gateway.Event{}, gateway.ErrInvalidEvent
+			}
+			continue // the platform supplied a transcript without an audio resource
+		}
+		if !hasMediaLocator(voice.Media) {
+			return gateway.Event{}, gateway.ErrInvalidEvent
+		}
 		add("voice", i, "", 0)
 	}
 	for i, p := range m.Files {
+		if !hasMediaLocator(p.Media) {
+			return gateway.Event{}, gateway.ErrInvalidEvent
+		}
 		add("file", i, p.FileName, p.Size)
 	}
-	for i := range m.Videos {
+	for i, video := range m.Videos {
+		if !hasMediaLocator(video.Media) {
+			return gateway.Event{}, gateway.ErrInvalidEvent
+		}
 		add("video", i, "", 0)
 	}
 	if m.QuotedMessage != nil {
 		e.ReplyTo = string(m.QuotedMessage.MessageID)
+		e.Quote = &gateway.Quote{MessageID: e.ReplyTo, Text: m.QuotedMessage.Text}
+		if q := m.QuotedMessage.Media; q != nil {
+			p := a.rememberMedia(r, id, "quote", 0, q.FileName, q.Size, m)
+			p.Kind, p.MIME = string(q.Type), q.MIMEType
+			e.Quote.Attachments = []gateway.Attachment{p}
+		}
 	}
 	if e.Text == "" && len(e.Attachments) == 0 {
-		return gateway.Event{}, gateway.ErrUnsupported
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "weixin", MessageType: string(m.Type)}
 	}
+	e.MessageType = string(m.Type)
+	a.addParts(&e, m)
 	a.replies.Put(wire.ContextKey(r, id), &saved, time.Now().Add(a.cfg.ReplyTTL))
 	return e, nil
 }
@@ -168,10 +208,23 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 	if err := wire.CheckSend(a.Account(), r, m); err != nil {
 		return gateway.Receipt{}, err
 	}
-	if r.TenantID != "" || r.Kind != "direct" || m.Format == "markdown" || len(m.Card) > 0 || len(m.Attachments) > 0 {
+	if r.TenantID != "" || r.Kind != "direct" || m.Format == "markdown" || len(m.Card) > 0 {
 		return gateway.Receipt{}, gateway.ErrUnsupported
 	}
 	outbound := wechatbot.OutboundMessage{ClientID: m.ClientID, Item: wechatbot.MessageItem{Type: wechatbot.ItemText, TextItem: &wechatbot.TextItem{Text: m.Text}}}
+	if len(m.Attachments) > 0 {
+		if len(m.Attachments) != 1 || m.Text != "" {
+			return gateway.Receipt{}, gateway.ErrUnsupported
+		}
+		entry, ok := a.media.Get(wire.ContextKey(r, m.Attachments[0].Ref))
+		if !ok || entry.outbound == nil {
+			return gateway.Receipt{}, gateway.ErrMediaExpired
+		}
+		if entry.replyTo != m.ReplyTo {
+			return gateway.Receipt{}, gateway.ErrInvalidEvent
+		}
+		outbound = entry.copyOutbound(m.ClientID)
+	}
 	var result wechatbot.SendResult
 	var err error
 	if m.ReplyTo != "" {

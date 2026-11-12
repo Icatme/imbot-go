@@ -32,6 +32,9 @@ type Adapter struct {
 	token       wire.TokenCache
 	guard       wire.Guard
 	replyRoutes *wire.Cache[bool]
+	resources   *wire.Cache[messageResource]
+	uploads     *wire.Cache[uploadedResource]
+	cardRoutes  *wire.Cache[gateway.Route]
 }
 
 func New(c Config) (*Adapter, error) {
@@ -51,13 +54,13 @@ func New(c Config) (*Adapter, error) {
 	if c.Transport == "webhook" && (c.VerificationToken == "" || c.EncryptKey == "") {
 		return nil, errors.New("feishu: authenticated webhook requires token and encrypt key")
 	}
-	return &Adapter{cfg: c, replyRoutes: wire.NewCache[bool](4096)}, nil
+	return &Adapter{cfg: c, replyRoutes: wire.NewCache[bool](4096), resources: wire.NewCache[messageResource](4096), uploads: wire.NewCache[uploadedResource](4096), cardRoutes: wire.NewCache[gateway.Route](4096)}, nil
 }
 func (a *Adapter) Account() gateway.Account {
 	return gateway.Account{Platform: "feishu", ID: a.cfg.AccountID}
 }
 func (a *Adapter) Capabilities() gateway.Capabilities {
-	return gateway.Capabilities{Text: true, Reply: true, ReceiveMedia: true, SendMedia: true, Card: true, Proactive: true}
+	return gateway.Capabilities{MaxTextBytes: 8000, Text: true, Reply: true, ReceiveMedia: true, SendMedia: true, DownloadMedia: true, UploadMedia: true, Markdown: true, Card: true, Proactive: true}
 }
 func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 	if sink == nil {
@@ -90,36 +93,13 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 	if err := wire.CheckSend(a.Account(), r, m); err != nil {
 		return gateway.Receipt{}, err
 	}
-	if m.Format == "markdown" {
-		return gateway.Receipt{}, gateway.ErrUnsupported
+	m, err := a.resolveUploads(r, m)
+	if err != nil {
+		return gateway.Receipt{}, err
 	}
-	typ := "text"
-	content, _ := json.Marshal(map[string]string{"text": m.Text})
-	if len(m.Card) > 0 {
-		if !json.Valid(m.Card) || m.Text != "" || len(m.Attachments) > 0 {
-			return gateway.Receipt{}, gateway.ErrUnsupported
-		}
-		typ = "interactive"
-		content = m.Card
-	}
-	if len(m.Attachments) > 0 {
-		if len(m.Attachments) != 1 || m.Text != "" {
-			return gateway.Receipt{}, gateway.ErrUnsupported
-		}
-		p := m.Attachments[0]
-		if p.Ref == "" {
-			return gateway.Receipt{}, gateway.ErrInvalidEvent
-		}
-		switch p.Kind {
-		case "image":
-			typ = "image"
-			content, _ = json.Marshal(map[string]string{"image_key": p.Ref})
-		case "file":
-			typ = "file"
-			content, _ = json.Marshal(map[string]string{"file_key": p.Ref})
-		default:
-			return gateway.Receipt{}, gateway.ErrUnsupported
-		}
+	typ, content, err := outboundContent(m)
+	if err != nil {
+		return gateway.Receipt{}, err
 	}
 	body := map[string]any{"msg_type": typ, "content": string(content)}
 	endpoint := a.cfg.BaseURL + "/open-apis/im/v1/messages?receive_id_type=chat_id"
@@ -144,22 +124,25 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 		return gateway.Receipt{}, err
 	}
 	var out struct {
-		Code int `json:"code"`
+		Code *int `json:"code"`
 		Data struct {
 			ID string `json:"message_id"`
 		} `json:"data"`
 	}
-	if err = wire.JSON(ctx, a.cfg.HTTPClient, "feishu", "POST", endpoint, wire.Bearer(token), body, &out); err != nil {
+	if err = a.apiJSON(ctx, token, endpoint, body, &out); err != nil {
 		return gateway.Receipt{}, err
 	}
-	if err = wire.Business("feishu", out.Code); err != nil {
-		if out.Code == 99991663 || out.Code == 99991668 {
-			a.token.Invalidate()
-		}
-		return gateway.Receipt{}, err
+	if out.Code == nil {
+		return gateway.Receipt{}, &gateway.APIError{Platform: "feishu", Status: http.StatusOK, Code: "missing_status", Uncertain: true}
+	}
+	if err = wire.Business("feishu", *out.Code); err != nil {
+		return gateway.Receipt{}, a.mediaAPIError(token, err)
 	}
 	if out.Data.ID == "" {
 		return gateway.Receipt{}, &gateway.APIError{Platform: "feishu", Status: 200, Code: "missing_message_id", Uncertain: true}
+	}
+	if typ == "interactive" {
+		a.rememberCardRoute(r, out.Data.ID)
 	}
 	return gateway.Receipt{MessageID: out.Data.ID, Accepted: true}, nil
 }
@@ -170,6 +153,7 @@ type envelope struct {
 	Challenge string `json:"challenge"`
 	Header    struct {
 		EventID   string `json:"event_id"`
+		Created   string `json:"create_time"`
 		EventType string `json:"event_type"`
 		Tenant    string `json:"tenant_key"`
 		Token     string `json:"token"`
@@ -207,22 +191,29 @@ func (a *Adapter) Decode(raw []byte) (gateway.Event, error) {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return gateway.Event{}, err
 	}
-	if v.Header.EventType != "im.message.receive_v1" {
-		return gateway.Event{}, gateway.ErrUnsupported
-	}
 	if v.Header.AppID != "" && v.Header.AppID != a.cfg.AppID {
 		return gateway.Event{}, gateway.ErrUnauthorized
 	}
+	if v.Header.EventType == "card.action.trigger" {
+		return a.decodeCardAction(raw, v)
+	}
+	if v.Header.EventType != "im.message.receive_v1" {
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "feishu", MessageType: v.Header.EventType}
+	}
 	m := v.Event.Message
-	e := gateway.Event{ID: v.Header.EventID, MessageID: m.ID, SenderID: v.Event.Sender.ID.OpenID, SenderIsBot: v.Event.Sender.Type == "app", Route: gateway.Route{Account: a.Account(), TenantID: v.Header.Tenant, ChatID: m.ChatID, ThreadID: m.Thread, Kind: "direct"}, ReplyTo: m.Parent, Time: time.Now()}
+	e := gateway.Event{MessageType: m.Type, ID: v.Header.EventID, MessageID: m.ID, SenderID: v.Event.Sender.ID.OpenID, SenderIsBot: v.Event.Sender.Type == "app", Route: gateway.Route{Account: a.Account(), TenantID: v.Header.Tenant, ChatID: m.ChatID, ThreadID: m.Thread, Kind: "direct"}, ReplyTo: m.Parent, Time: time.Now()}
 	if e.ID == "" {
 		e.ID = m.ID
 	}
-	if e.Route.ThreadID == "" {
-		e.Route.ThreadID = m.Root
+	if e.ReplyTo == "" {
+		e.ReplyTo = m.Root
 	}
-	if m.ChatType != "p2p" {
+	switch m.ChatType {
+	case "p2p":
+	case "group":
 		e.Route.Kind = "group"
+	default:
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "feishu", MessageType: "chat/" + m.ChatType}
 	}
 	if n, err := strconv.ParseInt(m.Created, 10, 64); err == nil && n > 0 {
 		e.Time = time.UnixMilli(n)
@@ -235,40 +226,72 @@ func (a *Adapter) Decode(raw []byte) (gateway.Event, error) {
 	if e.Route.Kind == "group" && !a.cfg.RespondWithoutMention && !e.Mentioned {
 		return gateway.Event{}, gateway.ErrUnauthorized
 	}
-	var c map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(m.Content), &c); err != nil {
-		return gateway.Event{}, err
-	}
-	text := func(k string) string { var s string; _ = json.Unmarshal(c[k], &s); return s }
-	switch m.Type {
-	case "text":
-		e.Text = text("text")
-	case "image":
-		e.Attachments = []gateway.Attachment{{Kind: "image", Ref: text("image_key")}}
-	case "file", "audio", "media", "sticker":
-		e.Attachments = []gateway.Attachment{{Kind: m.Type, Ref: text("file_key"), Name: text("file_name")}}
-	default:
-		return gateway.Event{}, gateway.ErrUnsupported
-	}
 	if e.MessageID == "" || e.SenderID == "" || e.Route.Validate() != nil {
 		return gateway.Event{}, gateway.ErrInvalidEvent
 	}
+	switch m.Type {
+	case "post", "text", "image", "file", "audio", "media", "sticker":
+	default:
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "feishu", MessageType: m.Type}
+	}
+	var c struct {
+		Text     string `json:"text"`
+		ImageKey string `json:"image_key"`
+		FileKey  string `json:"file_key"`
+		FileName string `json:"file_name"`
+	}
+	if err := json.Unmarshal([]byte(m.Content), &c); err != nil {
+		return gateway.Event{}, err
+	}
+	switch m.Type {
+	case "post":
+		var err error
+		e.Text, e.Attachments, e.Parts, err = decodePost([]byte(m.Content))
+		if err != nil {
+			return gateway.Event{}, err
+		}
+	case "text":
+		e.Text = c.Text
+	case "image":
+		e.Attachments = []gateway.Attachment{{Kind: "image", Ref: c.ImageKey}}
+	case "file", "audio", "media", "sticker":
+		e.Attachments = []gateway.Attachment{{Kind: m.Type, Ref: c.FileKey, Name: c.FileName}}
+	default:
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "feishu", MessageType: m.Type}
+	}
+	for _, p := range e.Attachments {
+		if p.Ref == "" {
+			return gateway.Event{}, gateway.ErrInvalidEvent
+		}
+	}
+	if e.ReplyTo != "" {
+		e.Quote = &gateway.Quote{MessageID: e.ReplyTo}
+	}
+	a.bindResources(&e)
 	a.replyRoutes.Put(wire.ContextKey(e.Route, e.MessageID), true, time.Now().Add(30*time.Minute))
 	return e, nil
 }
-func (a *Adapter) admit(ctx context.Context, raw []byte, sink gateway.Sink) error {
+func (a *Adapter) admit(ctx context.Context, raw []byte, sink gateway.Sink) ([]byte, error) {
 	e, err := a.Decode(raw)
+	var unsupported *gateway.UnsupportedMessageError
+	if errors.As(err, &unsupported) {
+		wire.ReportUnsupported(unsupported, a.cfg.OnError)
+	}
 	if errors.Is(err, gateway.ErrUnsupported) || errors.Is(err, gateway.ErrUnauthorized) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = sink(ctx, e)
-	if gateway.Consumed(err) {
-		return nil
+	if !gateway.Consumed(err) {
+		return nil, err
 	}
-	return err
+	if e.Interaction != nil {
+		// An empty action response keeps the current card unchanged.
+		return []byte("{}"), nil
+	}
+	return nil, nil
 }
 
 // Handler requires an encrypt key and verification token even for URL challenges.
@@ -331,8 +354,13 @@ func (a *Adapter) Handler(sink gateway.Sink) http.Handler {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if err = a.admit(ctx, raw, sink); err != nil {
+		response, err := a.admit(ctx, raw, sink)
+		if err != nil {
 			http.Error(w, "admission unavailable", 503)
+			return
+		}
+		if len(response) > 0 {
+			wire.Respond(w, 200, json.RawMessage(response))
 			return
 		}
 		wire.Respond(w, 200, map[string]int{"code": 0})
@@ -434,16 +462,19 @@ func (a *Adapter) connect(ctx context.Context, sink gateway.Sink) error {
 		if !ready {
 			continue
 		}
-		code := 200
-		if f.Headers["type"] == "event" {
+		response := struct {
+			Code int    `json:"code"`
+			Data []byte `json:"data,omitempty"`
+		}{Code: 200}
+		if f.Headers["type"] == "event" || f.Headers["type"] == "card" {
 			admitctx, done := context.WithTimeout(connctx, 2*time.Second)
-			err = a.admit(admitctx, payload, sink)
+			response.Data, err = a.admit(admitctx, payload, sink)
 			done()
 			if err != nil {
-				code = 500
+				response.Code = 500
 			}
 		}
-		f.Payload, _ = json.Marshal(map[string]int{"code": code})
+		f.Payload, _ = json.Marshal(response)
 		if err = s.Write(connctx, 2, f.encode()); err != nil {
 			return err
 		}

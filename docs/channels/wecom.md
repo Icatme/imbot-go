@@ -30,8 +30,8 @@
 
 ## 安全与范围
 
-媒体 URL/密钥只保留在 Event.Native（json:"-"），默认不入日志或 JSON 持久化；需要媒体处理的应用应在受控路径下载或加密保存，不能默认抓取任意 URL。Native 不适合直接打印。
+媒体 URL/密钥保留在 Adapter 私有 Route 缓存与 Event.Native（json:"-"），默认不入日志或 JSON 持久化。入站 URL 及定位缓存按官方短期链接设置最多 5 分钟有效期。Download 显式下载解密；上传走 init/chunk/finish 并将资源绑定当前连接和 Route。持久消费必须先保存字节再确认 Sink，Native 不适合直接打印。
 
-未实现分片媒体上传、加密文件下载、流式图文附加、欢迎语、卡片交互回调/审批/更新。Card 仅接受平台原生 JSON，不提供高级卡片模型。参照官方 WecomTeam/aibot-node-sdk 的 src/ws.ts、src/client.ts、src/types/api.ts 与 message.ts，读取日期 2026-11-12；没有引用其代码或依赖。
+已实现分片媒体上传、加密文件下载和 template_card_event 点击接入，点击仍经过 Gateway Authorize/Sink。未实现流式图文附加、欢迎语、业务审批/卡片更新。Card 仅接受平台原生 JSON，不提供高级卡片模型；具体限制见[媒体契约](media.md)。参照官方 WecomTeam/aibot-node-sdk 的 src/ws.ts、src/client.ts、src/types/api.ts 与 message.ts，读取日期 2026-11-12；没有引用其代码或依赖。
 
 13 项测试覆盖回执关联、串行、超时、负回执、旧连接隔离、流式快照、秘密序列化、出站租户隔离、取消请求以及真实本地 WebSocket 握手/回调中等待发送回执；已在实际仓库 Go 1.26.4/Windows 上通过 `go test -race ./channels/wecom`。仍未做真实企业微信账号验收。

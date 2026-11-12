@@ -202,7 +202,7 @@ func TestMediaCallbackRequiresReference(t *testing.T) {
 		}
 		raw = strings.Replace(raw, "</xml>", "<MediaId>media</MediaId></xml>", 1)
 		e, err := a.Decode([]byte(raw))
-		if err != nil || len(e.Attachments) != 1 || e.Attachments[0].Ref != "media" {
+		if err != nil || len(e.Attachments) != 1 || e.Attachments[0].Ref == "" || e.Attachments[0].Ref == "media" {
 			t.Fatal(e, err)
 		}
 	}

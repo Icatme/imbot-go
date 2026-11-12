@@ -24,6 +24,9 @@ func Download(ctx context.Context, rawURL string) (data []byte, fileName string,
 
 // DownloadWithClient fetches a remote URL using the supplied HTTP client.
 func DownloadWithClient(ctx context.Context, client *http.Client, rawURL string) (data []byte, fileName string, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return nil, "", fmt.Errorf("invalid remote URL %q", redact.URL(rawURL))
@@ -43,7 +46,7 @@ func DownloadWithClient(ctx context.Context, client *http.Client, rawURL string)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", fmt.Errorf("remote media download failed: HTTP %d", resp.StatusCode)
 	}
 
@@ -54,6 +57,9 @@ func DownloadWithClient(ctx context.Context, client *http.Client, rawURL string)
 	}
 	if len(data) > maxDownloadBytes {
 		return nil, "", fmt.Errorf("remote media exceeds %d bytes", maxDownloadBytes)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
 	}
 
 	fileName = suggestedFileName(resp, u)

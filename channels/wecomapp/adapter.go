@@ -27,12 +27,14 @@ type Config struct {
 	AccountID, CorpID, CorpSecret, Token, EncodingAESKey, APIBase string
 	AgentID                                                       int
 	HTTPClient                                                    *http.Client
+	OnError                                                       func(error)
 }
 type Adapter struct {
 	cfg   Config
 	key   []byte
 	token wire.TokenCache
 	guard wire.Guard
+	media *wire.Cache[mediaResource]
 }
 
 func New(c Config) (*Adapter, error) {
@@ -47,13 +49,13 @@ func New(c Config) (*Adapter, error) {
 	if err = wire.Endpoint(c.APIBase); err != nil {
 		return nil, err
 	}
-	return &Adapter{cfg: c, key: key}, nil
+	return &Adapter{cfg: c, key: key, media: wire.NewCache[mediaResource](4096)}, nil
 }
 func (a *Adapter) Account() gateway.Account {
 	return gateway.Account{Platform: "wecom_app", ID: a.cfg.AccountID}
 }
 func (a *Adapter) Capabilities() gateway.Capabilities {
-	return gateway.Capabilities{Text: true, Markdown: true, Reply: true, ReceiveMedia: true, SendMedia: true, Proactive: true}
+	return gateway.Capabilities{Text: true, Markdown: true, Reply: true, ReceiveMedia: true, SendMedia: true, DownloadMedia: true, UploadMedia: true, Proactive: true, MaxTextBytes: 2048}
 }
 func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 	if sink == nil {
@@ -160,20 +162,27 @@ func (a *Adapter) Decode(raw []byte) (gateway.Event, error) {
 	if m.To != a.cfg.CorpID || m.AgentID != a.cfg.AgentID {
 		return gateway.Event{}, gateway.ErrUnauthorized
 	}
-	e := gateway.Event{ID: m.ID, MessageID: m.ID, SenderID: m.From, Time: time.Unix(m.Created, 0), Text: m.Content, Route: gateway.Route{Account: a.Account(), TenantID: a.cfg.CorpID, ChatID: m.From, Kind: "direct"}}
+	e := gateway.Event{ID: m.ID, MessageID: m.ID, SenderID: m.From, Time: time.Unix(m.Created, 0), Text: m.Content, MessageType: m.Type, Route: gateway.Route{Account: a.Account(), TenantID: a.cfg.CorpID, ChatID: m.From, Kind: "direct"}}
 	switch m.Type {
 	case "text":
 	case "image", "voice", "video", "file":
 		if m.MediaID == "" {
 			return gateway.Event{}, gateway.ErrInvalidEvent
 		}
-		e.Attachments = []gateway.Attachment{{Kind: m.Type, Ref: m.MediaID}}
+		e.Attachments = []gateway.Attachment{{Kind: m.Type, Ref: inboundRefPrefix + m.ID, MessageID: m.ID, Scope: &e.Route, ExpiresAt: time.Now().Add(30 * time.Minute)}}
 		e.Text = m.Recognition
 	default:
-		return gateway.Event{}, gateway.ErrUnsupported
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "wecom_app", MessageType: m.Type}
 	}
 	if e.ID == "" || e.SenderID == "" || e.Route.Validate() != nil {
 		return gateway.Event{}, gateway.ErrInvalidEvent
+	}
+	if e.Text != "" {
+		e.Parts = append(e.Parts, gateway.ContentPart{Text: e.Text})
+	}
+	for _, p := range e.Attachments {
+		a.media.Put(wire.ContextKey(e.Route, p.Ref), mediaResource{id: m.MediaID, kind: m.Type}, p.ExpiresAt)
+		e.Parts = append(e.Parts, gateway.ContentPart{Attachment: &p})
 	}
 	return e, nil
 }
@@ -219,6 +228,9 @@ func (a *Adapter) Handler(sink gateway.Sink) http.Handler {
 		if err != nil && !errors.Is(err, gateway.ErrUnsupported) {
 			http.Error(w, "invalid message", 400)
 			return
+		}
+		if errors.Is(err, gateway.ErrUnsupported) {
+			wire.ReportUnsupported(err, a.cfg.OnError)
 		}
 		if err == nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -272,6 +284,16 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 			return gateway.Receipt{}, gateway.ErrUnsupported
 		}
 		p := m.Attachments[0]
+		if strings.HasPrefix(p.Ref, uploadRefPrefix) || strings.HasPrefix(p.Ref, inboundRefPrefix) {
+			resource, ok := a.media.Get(wire.ContextKey(r, p.Ref))
+			if !ok {
+				return gateway.Receipt{}, gateway.ErrMediaExpired
+			}
+			if resource.kind != p.Kind {
+				return gateway.Receipt{}, gateway.ErrInvalidEvent
+			}
+			p.Ref = resource.id
+		}
 		switch p.Kind {
 		case "image", "file", "voice", "video":
 		default:
@@ -294,15 +316,12 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 	}
 	err = wire.JSON(ctx, a.cfg.HTTPClient, "wecom_app", "POST", a.cfg.APIBase+"/cgi-bin/message/send?access_token="+url.QueryEscape(token), nil, body, &out)
 	if err != nil {
-		return gateway.Receipt{}, err
+		return gateway.Receipt{}, a.apiError(token, err)
 	}
 	if out.Code == nil {
 		return gateway.Receipt{}, &gateway.APIError{Platform: "wecom_app", Status: 200, Code: "missing_status", Uncertain: true}
 	}
-	if err = wire.Business("wecom_app", *out.Code); err != nil {
-		if *out.Code == 40001 || *out.Code == 40014 || *out.Code == 42001 {
-			a.token.Invalidate()
-		}
+	if err = a.mediaError(token, *out.Code); err != nil {
 		return gateway.Receipt{}, err
 	}
 	if out.InvalidUser != "" || out.Unlicensed != "" {

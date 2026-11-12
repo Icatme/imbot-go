@@ -116,16 +116,22 @@ func (b *Bot) validateDeliverySession(generation uint64) error {
 
 func (b *Bot) readySessionForContext(ctx context.Context) (*auth.Credentials, uint64, error) {
 	if ctx != nil {
-		if generation, ok := ctx.Value(handlerSessionGenerationKey{}).(uint64); ok {
-			creds, err := b.readySession(generation)
-			return creds, generation, err
+		if session, ok := ctx.Value(handlerSessionKey{}).(handlerSession); ok {
+			if session.bot != b {
+				return nil, 0, ErrSessionChanged
+			}
+			creds, err := b.readySession(session.generation)
+			return creds, session.generation, err
 		}
 	}
 	return b.readySessionSnapshot()
 }
 
 func (b *Bot) incomingSessionGeneration(msg *IncomingMessage) (uint64, error) {
-	if msg.sessionBound {
+	if msg.sessionBot != nil {
+		if msg.sessionBot != b {
+			return 0, ErrSessionChanged
+		}
 		if _, err := b.readySession(msg.sessionGeneration); err != nil {
 			return 0, err
 		}
@@ -159,9 +165,10 @@ func (b *Bot) newConfigCache(creds *auth.Credentials, generation uint64) *config
 }
 
 func (b *Bot) readyConfig(ctx context.Context) (*auth.Credentials, *config.Cache, uint64, error) {
-	expectedGeneration, bound := uint64(0), false
+	var expected handlerSession
+	bound := false
 	if ctx != nil {
-		expectedGeneration, bound = ctx.Value(handlerSessionGenerationKey{}).(uint64)
+		expected, bound = ctx.Value(handlerSessionKey{}).(handlerSession)
 	}
 	b.mu.Lock()
 	state := b.reauth
@@ -169,7 +176,7 @@ func (b *Bot) readyConfig(ctx context.Context) (*auth.Credentials, *config.Cache
 	configCache := b.configCache
 	generation := b.sessionGeneration
 	b.mu.Unlock()
-	if bound && expectedGeneration != generation {
+	if bound && (expected.bot != b || expected.generation != generation) {
 		return nil, nil, 0, ErrSessionChanged
 	}
 	if state != nil {

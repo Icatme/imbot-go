@@ -22,6 +22,22 @@ import (
 
 const MaxBody = 2 << 20
 
+// CancellationCause preserves cancellation owned by either the caller or the
+// HTTP client (for example Client.Timeout). Return only standard sentinels:
+// transport errors themselves may contain credentials or signed request URLs.
+func CancellationCause(ctx context.Context, err error) error {
+	if cause := ctx.Err(); cause != nil {
+		return cause
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
 // Client copies caller configuration; it never mutates a shared http.Client.
 func Client(c *http.Client) *http.Client {
 	var v http.Client
@@ -52,6 +68,9 @@ func Endpoint(raw string) error {
 
 // JSON never follows redirects or includes URLs/bodies in returned errors.
 func JSON(ctx context.Context, c *http.Client, platform, method, endpoint string, headers http.Header, input, output any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := Endpoint(endpoint); err != nil {
 		return err
 	}
@@ -78,15 +97,19 @@ func JSON(ctx context.Context, c *http.Client, platform, method, endpoint string
 	req.Header.Set("Accept", "application/json")
 	res, err := Client(c).Do(req)
 	if err != nil {
-		if ctx.Err() != nil {
-			return &gateway.APIError{Platform: platform, Code: "canceled", Retryable: false, Uncertain: method != "GET"}
+		if cause := CancellationCause(ctx, err); cause != nil {
+			return errors.Join(cause, &gateway.APIError{Platform: platform, Code: "canceled", Retryable: false, Uncertain: method != "GET"})
 		}
 		return &gateway.APIError{Platform: platform, Code: "transport", Retryable: true, Uncertain: method != "GET"}
 	}
 	defer res.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(res.Body, MaxBody+1))
 	if err != nil || len(data) > MaxBody {
-		return &gateway.APIError{Platform: platform, Status: res.StatusCode, Code: "response_limit_or_read", Uncertain: method != "GET"}
+		api := &gateway.APIError{Platform: platform, Status: res.StatusCode, Code: "response_limit_or_read", Uncertain: method != "GET"}
+		if cause := CancellationCause(ctx, err); cause != nil {
+			return errors.Join(cause, api)
+		}
+		return api
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return &gateway.APIError{Platform: platform, Status: res.StatusCode, Code: "http", Retryable: res.StatusCode == 429 || res.StatusCode >= 500, Uncertain: method != "GET" && res.StatusCode >= 500}
@@ -164,6 +187,11 @@ func DecryptCBC(key, iv, data []byte, padBlock int) ([]byte, error) {
 func CheckSend(a gateway.Account, r gateway.Route, m gateway.Message) error {
 	if r.Account != a || r.Validate() != nil {
 		return gateway.ErrInvalidEvent
+	}
+	for _, p := range m.Attachments {
+		if err := p.ValidateFor(r); err != nil {
+			return err
+		}
 	}
 	if len(m.Text) > 60000 || len(m.Card) > MaxBody {
 		return errors.New("message exceeds channel limit")

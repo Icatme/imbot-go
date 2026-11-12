@@ -25,7 +25,12 @@ type authenticatedSession struct {
 	generation uint64
 }
 
-type handlerSessionGenerationKey struct{}
+type handlerSessionKey struct{}
+
+type handlerSession struct {
+	bot        *Bot
+	generation uint64
+}
 
 func (b *Bot) beginRun(ctx context.Context) (authenticatedSession, MessageHandler, context.Context, context.CancelFunc, error) {
 	b.mu.Lock()
@@ -294,11 +299,11 @@ func (b *Bot) processWireMessage(ctx context.Context, handler MessageHandler, se
 		b.resolveQuote(sessionGeneration, wire, incoming)
 		b.cacheInboundQuote(sessionGeneration, wire)
 		incoming.sessionGeneration = sessionGeneration
-		incoming.sessionBound = true
+		incoming.sessionBot = b
 		if err := b.hooks.AfterReceive.Run(incoming); err != nil {
 			return fmt.Errorf("AfterReceive hook failed: %w", err)
 		}
-		handlerCtx := context.WithValue(ctx, handlerSessionGenerationKey{}, sessionGeneration)
+		handlerCtx := context.WithValue(ctx, handlerSessionKey{}, handlerSession{bot: b, generation: sessionGeneration})
 		result := b.invokeHandler(handlerCtx, handler, incoming)
 		if err := validateMessageResult(result); err != nil {
 			return fmt.Errorf("handle message: %w", err)

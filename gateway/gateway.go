@@ -185,6 +185,9 @@ func (g *Gateway) Accept(ctx context.Context, e Event) (err error) {
 	return g.opts.Handler(ctx, e)
 }
 func (g *Gateway) Send(ctx context.Context, r Route, m Message) (Receipt, error) {
+	if err := ctx.Err(); err != nil {
+		return Receipt{}, err
+	}
 	if r.Validate() != nil {
 		return Receipt{}, ErrInvalidEvent
 	}
@@ -202,6 +205,9 @@ func (g *Gateway) Send(ctx context.Context, r Route, m Message) (Receipt, error)
 	return a.Send(ctx, r, m) // no blind retries of non-idempotent sends
 }
 func (g *Gateway) UpdateStream(ctx context.Context, r Route, u StreamUpdate) (Receipt, error) {
+	if err := ctx.Err(); err != nil {
+		return Receipt{}, err
+	}
 	if r.Validate() != nil || u.ReplyTo == "" || u.StreamID == "" {
 		return Receipt{}, ErrInvalidEvent
 	}

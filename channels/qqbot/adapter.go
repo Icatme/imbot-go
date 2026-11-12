@@ -10,7 +10,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Icatme/wechatbot-go/channels/internal/wire"
@@ -19,15 +18,19 @@ import (
 
 type Config struct {
 	AccountID, AppID, ClientSecret, APIBase, TokenURL string
-	EnableMarkdown, EnableProactive                   bool
+	EnableMarkdown, EnableProactive, EnableKeyboard   bool
 	HTTPClient                                        *http.Client
+	OnError                                           func(error)
 }
 type Adapter struct {
-	cfg     Config
-	private ed25519.PrivateKey
-	public  ed25519.PublicKey
-	token   wire.TokenCache
-	guard   wire.Guard
+	cfg          Config
+	private      ed25519.PrivateKey
+	public       ed25519.PublicKey
+	token        wire.TokenCache
+	guard        wire.Guard
+	media        *wire.Cache[incomingAttachment]
+	uploads      *wire.Cache[uploadedResource]
+	interactions *wire.Cache[bool]
 }
 
 func key(secret string) (ed25519.PrivateKey, error) {
@@ -57,13 +60,13 @@ func New(c Config) (*Adapter, error) {
 			return nil, err
 		}
 	}
-	return &Adapter{cfg: c, private: private, public: private.Public().(ed25519.PublicKey)}, nil
+	return &Adapter{cfg: c, private: private, public: private.Public().(ed25519.PublicKey), media: wire.NewCache[incomingAttachment](4096), uploads: wire.NewCache[uploadedResource](4096), interactions: wire.NewCache[bool](1024)}, nil
 }
 func (a *Adapter) Account() gateway.Account {
 	return gateway.Account{Platform: "qqbot", ID: a.cfg.AccountID}
 }
 func (a *Adapter) Capabilities() gateway.Capabilities {
-	return gateway.Capabilities{Text: true, Reply: true, ReceiveMedia: true, SendMedia: true, Markdown: a.cfg.EnableMarkdown, Proactive: a.cfg.EnableProactive}
+	return gateway.Capabilities{Text: true, MaxTextBytes: 4000, Reply: true, ReceiveMedia: true, SendMedia: true, DownloadMedia: true, UploadMedia: true, Card: a.cfg.EnableKeyboard, Markdown: a.cfg.EnableMarkdown, Proactive: a.cfg.EnableProactive}
 }
 func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 	if sink == nil {
@@ -86,67 +89,7 @@ type envelope struct {
 	Type string          `json:"t"`
 	Data json.RawMessage `json:"d"`
 }
-type incoming struct {
-	ID        string `json:"id"`
-	Content   string `json:"content"`
-	Timestamp string `json:"timestamp"`
-	Group     string `json:"group_openid"`
-	Author    struct {
-		User   string `json:"user_openid"`
-		Member string `json:"member_openid"`
-		Bot    bool   `json:"bot"`
-	} `json:"author"`
-	Attachments []struct {
-		ID   string `json:"id"`
-		Type string `json:"content_type"`
-		Name string `json:"filename"`
-		Size int64  `json:"size"`
-		URL  string `json:"url"`
-	} `json:"attachments"`
-}
 
-func (a *Adapter) decode(v envelope) (gateway.Event, error) {
-	if v.Type != "C2C_MESSAGE_CREATE" && v.Type != "GROUP_AT_MESSAGE_CREATE" {
-		return gateway.Event{}, gateway.ErrUnsupported
-	}
-	var m incoming
-	if json.Unmarshal(v.Data, &m) != nil {
-		return gateway.Event{}, gateway.ErrInvalidEvent
-	}
-	sender := m.Author.User
-	kind := "direct"
-	chat := sender
-	if v.Type == "GROUP_AT_MESSAGE_CREATE" {
-		sender = m.Author.Member
-		chat = m.Group
-		kind = "group"
-	}
-	e := gateway.Event{ID: v.ID, MessageID: m.ID, SenderID: sender, SenderIsBot: m.Author.Bot, Text: strings.TrimSpace(m.Content), Mentioned: kind == "group", Route: gateway.Route{Account: a.Account(), TenantID: a.cfg.AppID, ChatID: chat, Kind: kind}, Time: time.Now(), Native: json.RawMessage(append([]byte(nil), v.Data...))}
-	if e.ID == "" {
-		e.ID = m.ID
-	}
-	if ts, err := time.Parse(time.RFC3339Nano, m.Timestamp); err == nil {
-		e.Time = ts
-	}
-	for i, p := range m.Attachments {
-		typ := "file"
-		for _, prefix := range []string{"image/", "audio/", "video/"} {
-			if strings.HasPrefix(p.Type, prefix) {
-				typ = strings.TrimSuffix(prefix, "/")
-				break
-			}
-		}
-		ref := p.ID
-		if ref == "" {
-			ref = m.ID + ":" + strconv.Itoa(i)
-		}
-		e.Attachments = append(e.Attachments, gateway.Attachment{Kind: typ, Ref: ref, Name: p.Name, Size: p.Size})
-	}
-	if e.ID == "" || e.MessageID == "" || sender == "" || e.Route.Validate() != nil {
-		return gateway.Event{}, gateway.ErrInvalidEvent
-	}
-	return e, nil
-}
 func (a *Adapter) Handler(sink gateway.Sink) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if sink == nil {
@@ -198,7 +141,14 @@ func (a *Adapter) Handler(sink gateway.Sink) http.Handler {
 				err = sink(ctx, e)
 				cancel()
 			}
-			if !gateway.Consumed(err) && !errors.Is(err, gateway.ErrUnsupported) {
+			var unsupported *gateway.UnsupportedMessageError
+			reportedUnsupported := errors.As(err, &unsupported)
+			if reportedUnsupported {
+				wire.ReportUnsupported(err, a.cfg.OnError)
+			} else if err != nil && a.cfg.OnError != nil {
+				a.cfg.OnError(err)
+			}
+			if !gateway.Consumed(err) && !reportedUnsupported {
 				result = 1
 			}
 			wire.Respond(w, 200, map[string]int{"op": 12, "d": result}) // d=1 requests redelivery
@@ -234,17 +184,43 @@ func (a *Adapter) accessToken(ctx context.Context) (string, error) {
 		return out.Token, time.Duration(ttl) * time.Second, err
 	})
 }
+
+// A failed operation is returned unchanged. Only a later explicit call obtains
+// fresh credentials; a 401 never causes this adapter to replay a request.
+func (a *Adapter) invalidateTokenOnUnauthorized(token string, err error) error {
+	var api *gateway.APIError
+	if errors.As(err, &api) && api.Status == http.StatusUnauthorized {
+		a.token.Invalidate(token)
+	}
+	return err
+}
+
 func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) (gateway.Receipt, error) {
 	if err := wire.CheckSend(a.Account(), r, m); err != nil {
 		return gateway.Receipt{}, err
 	}
-	if r.TenantID != a.cfg.AppID || r.ThreadID != "" || len(m.Card) > 0 {
+	if r.TenantID != a.cfg.AppID || r.ThreadID != "" {
 		return gateway.Receipt{}, gateway.ErrUnsupported
+	}
+	if a.isInteractionReply(r, m.ReplyTo) {
+		return gateway.Receipt{}, gateway.ErrUnsupported
+	}
+	if len(m.Text) > 4000 {
+		return gateway.Receipt{}, gateway.ErrInvalidEvent
 	}
 	if m.ReplyTo == "" && !a.cfg.EnableProactive {
 		return gateway.Receipt{}, gateway.ErrUnsupported
 	}
 	body := map[string]any{"content": m.Text, "msg_type": 0}
+	if len(m.Card) > 0 {
+		if !a.cfg.EnableKeyboard || len(m.Attachments) > 0 || m.Text == "" {
+			return gateway.Receipt{}, gateway.ErrUnsupported
+		}
+		if err := validateKeyboard(m.Card); err != nil {
+			return gateway.Receipt{}, err
+		}
+		body["keyboard"] = json.RawMessage(m.Card)
+	}
 	seq := m.Sequence
 	if seq == 0 {
 		seq = 1
@@ -265,11 +241,22 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 		delete(body, "content")
 	}
 	if len(m.Attachments) > 0 {
-		if len(m.Attachments) != 1 || m.Format == "markdown" || m.Attachments[0].Ref == "" {
+		if len(m.Attachments) != 1 || m.Format == "markdown" || m.Attachments[0].Ref == "" || m.Attachments[0].MessageID != "" {
 			return gateway.Receipt{}, gateway.ErrUnsupported
 		}
+		if err := m.Attachments[0].ValidateFor(r); err != nil {
+			return gateway.Receipt{}, err
+		}
+		fileInfo, err := a.outboundFileInfo(r, m.Attachments[0])
+		if err != nil {
+			return gateway.Receipt{}, err
+		}
 		body["msg_type"] = 7
-		body["media"] = map[string]string{"file_info": m.Attachments[0].Ref}
+		body["media"] = map[string]string{"file_info": fileInfo}
+		// QQ's C2C/group media contract requires content even without a caption.
+		if m.Text == "" {
+			body["content"] = " "
+		}
 	}
 	path := ""
 	switch r.Kind {
@@ -280,24 +267,10 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 	default:
 		return gateway.Receipt{}, gateway.ErrUnsupported
 	}
-	token, err := a.accessToken(ctx)
-	if err != nil {
-		return gateway.Receipt{}, err
-	}
 	var out struct {
-		ID   string `json:"id"`
-		Code int    `json:"code"`
+		ID string `json:"id"`
 	}
-	headers := http.Header{"Authorization": []string{"QQBot " + token}, "X-Union-Appid": []string{a.cfg.AppID}}
-	err = wire.JSON(ctx, a.cfg.HTTPClient, "qqbot", "POST", a.cfg.APIBase+path+wire.PathID(r.ChatID)+"/messages", headers, body, &out)
-	if err != nil {
-		var api *gateway.APIError
-		if errors.As(err, &api) && api.Status == 401 {
-			a.token.Invalidate()
-		}
-		return gateway.Receipt{}, err
-	}
-	if err = wire.Business("qqbot", out.Code); err != nil {
+	if err := a.operationJSON(ctx, http.MethodPost, path+wire.PathID(r.ChatID)+"/messages", body, &out); err != nil {
 		return gateway.Receipt{}, err
 	}
 	if out.ID == "" {

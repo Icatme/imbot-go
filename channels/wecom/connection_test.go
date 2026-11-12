@@ -88,6 +88,16 @@ func TestConnectionReadsACKWhileSinkSends(t *testing.T) {
 			errs <- err
 			return
 		}
+		unknown := pushed()
+		unknown.Body = []byte(strings.Replace(string(unknown.Body), `"msgtype":"text"`, `"msgtype":"future"`, 1))
+		if err = writeServer(rw, unknown); err != nil {
+			errs <- err
+			return
+		}
+		if err = writeServer(rw, cardEventFrame()); err != nil {
+			errs <- err
+			return
+		}
 		if err = writeServer(rw, pushed()); err != nil {
 			errs <- err
 			return
@@ -105,16 +115,22 @@ func TestConnectionReadsACKWhileSinkSends(t *testing.T) {
 		_, _ = rw.ReadByte()
 	}))
 	defer srv.Close()
-	a, err := New(Config{AccountID: "a", BotID: "bot", Secret: "secret", WebSocketURL: strings.Replace(srv.URL, "http:", "ws:", 1)})
+	reported := make(chan error, 1)
+	a, err := New(Config{AccountID: "a", BotID: "bot", Secret: "secret", WebSocketURL: strings.Replace(srv.URL, "http:", "ws:", 1), OnError: func(err error) { reported <- err }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	admitted := make(chan error, 1)
+	interactions := make(chan gateway.Event, 1)
 	stopped := make(chan error, 1)
 	go func() {
 		stopped <- a.connect(ctx, func(ctx context.Context, e gateway.Event) error {
+			if e.Interaction != nil {
+				interactions <- e
+				return nil
+			}
 			out, err := a.Send(ctx, e.Route, e.Reply("hello"))
 			if err == nil && !out.Accepted {
 				err = fmt.Errorf("not accepted")
@@ -130,6 +146,22 @@ func TestConnectionReadsACKWhileSinkSends(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("reader deadlocked behind sink send")
+	}
+	select {
+	case err := <-reported:
+		if unsupported, ok := err.(*gateway.UnsupportedMessageError); !ok || unsupported.MessageType != "future" {
+			t.Fatal("unknown format was not reported", err)
+		}
+	default:
+		t.Fatal("unknown format was silently consumed")
+	}
+	select {
+	case e := <-interactions:
+		if e.Interaction.Name != "template_card_event" {
+			t.Fatal(e.Interaction)
+		}
+	default:
+		t.Fatal("template action bypassed the admission sink")
 	}
 	cancel()
 	<-stopped

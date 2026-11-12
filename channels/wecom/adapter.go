@@ -18,18 +18,23 @@ import (
 type Config struct {
 	AccountID, BotID, Secret, TenantID, WebSocketURL string
 	HTTPClient                                       *http.Client
-	OnError                                          func(error)
+	// MediaTimeout bounds each upload stage; caller context bounds the whole transfer.
+	MediaTimeout time.Duration
+	OnError      func(error)
 }
 type replyContext struct {
 	session   *session
 	RequestID string
 }
 type Adapter struct {
-	cfg     Config
-	guard   wire.Guard
-	mu      sync.Mutex
-	current *session
-	replies *wire.Cache[replyContext]
+	cfg         Config
+	guard       wire.Guard
+	mu          sync.Mutex
+	current     *session
+	replies     *wire.Cache[replyContext]
+	downloads   *wire.Cache[mediaSource]
+	inlineMedia *wire.Cache[string]
+	uploads     *wire.Cache[uploadedMedia]
 }
 
 func New(c Config) (*Adapter, error) {
@@ -42,13 +47,19 @@ func New(c Config) (*Adapter, error) {
 	if err := wire.Endpoint(c.WebSocketURL); err != nil {
 		return nil, err
 	}
-	return &Adapter{cfg: c, replies: wire.NewCache[replyContext](4096)}, nil
+	if c.MediaTimeout < 0 {
+		return nil, errors.New("wecom: media timeout must be positive")
+	}
+	if c.MediaTimeout == 0 {
+		c.MediaTimeout = 60 * time.Second
+	}
+	return &Adapter{cfg: c, replies: wire.NewCache[replyContext](4096), downloads: wire.NewCache[mediaSource](4096), inlineMedia: wire.NewCache[string](32), uploads: wire.NewCache[uploadedMedia](4096)}, nil
 }
 func (a *Adapter) Account() gateway.Account {
 	return gateway.Account{Platform: "wecom", ID: a.cfg.AccountID}
 }
 func (a *Adapter) Capabilities() gateway.Capabilities {
-	return gateway.Capabilities{Text: true, Markdown: true, Reply: true, ReceiveMedia: true, Card: true, Stream: true, Proactive: true}
+	return gateway.Capabilities{Text: true, Markdown: true, Reply: true, ReceiveMedia: true, SendMedia: true, DownloadMedia: true, UploadMedia: true, Card: true, Stream: true, Proactive: true, MaxTextBytes: 20000}
 }
 func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 	if sink == nil {
@@ -151,24 +162,20 @@ func (a *Adapter) connect(ctx context.Context, sink gateway.Sink) error {
 		if json.Unmarshal(raw, &f) != nil {
 			return errors.New("wecom: invalid frame")
 		}
-		if f.Cmd == "aibot_event_callback" {
-			var v struct {
-				Event struct {
-					Type string `json:"eventtype"`
-				} `json:"event"`
-			}
-			_ = json.Unmarshal(f.Body, &v)
-			if v.Event.Type == "disconnected_event" {
-				return &gateway.APIError{Platform: "wecom", Code: "connection_taken_over"}
-			}
-			continue
-		}
-		if f.Cmd != "aibot_msg_callback" {
+		if f.Cmd != "aibot_msg_callback" && f.Cmd != "aibot_event_callback" {
 			s.deliver(f)
 			continue
 		}
-		e, err := a.decode(f, s)
+		var e gateway.Event
+		if f.Cmd == "aibot_event_callback" {
+			e, err = a.decodeEvent(f)
+		} else {
+			e, err = a.decode(f, s)
+		}
 		if errors.Is(err, gateway.ErrUnsupported) || errors.Is(err, gateway.ErrUnauthorized) {
+			if errors.Is(err, gateway.ErrUnsupported) {
+				wire.ReportUnsupported(err, a.cfg.OnError)
+			}
 			continue
 		}
 		if err != nil {
@@ -184,87 +191,6 @@ func (a *Adapter) connect(ctx context.Context, sink gateway.Sink) error {
 	}
 }
 
-type content struct {
-	Content string `json:"content"`
-	URL     string `json:"url"`
-	AESKey  string `json:"aeskey"`
-}
-type incoming struct {
-	ID       string `json:"msgid"`
-	BotID    string `json:"aibotid"`
-	ChatID   string `json:"chatid"`
-	ChatType string `json:"chattype"`
-	Type     string `json:"msgtype"`
-	Created  int64  `json:"create_time"`
-	From     struct {
-		ID string `json:"userid"`
-	} `json:"from"`
-	Text  content `json:"text"`
-	Voice content `json:"voice"`
-	Image content `json:"image"`
-	File  content `json:"file"`
-	Video content `json:"video"`
-	Mixed struct {
-		Items []struct {
-			Type  string  `json:"msgtype"`
-			Text  content `json:"text"`
-			Image content `json:"image"`
-		} `json:"msg_item"`
-	} `json:"mixed"`
-}
-
-func (a *Adapter) decode(f frame, s *session) (gateway.Event, error) {
-	var v incoming
-	if json.Unmarshal(f.Body, &v) != nil {
-		return gateway.Event{}, gateway.ErrInvalidEvent
-	}
-	if v.BotID != "" && v.BotID != a.cfg.BotID {
-		return gateway.Event{}, gateway.ErrUnauthorized
-	}
-	e := gateway.Event{ID: v.ID, MessageID: v.ID, SenderID: v.From.ID, Time: time.Now(), Route: gateway.Route{Account: a.Account(), TenantID: a.cfg.TenantID, ChatID: v.ChatID, Kind: "group"}, Native: json.RawMessage(append([]byte(nil), f.Body...))}
-	switch v.ChatType {
-	case "single":
-		e.Route.Kind = "direct"
-		e.Route.ChatID = v.From.ID
-	case "group":
-	default:
-		return gateway.Event{}, gateway.ErrUnsupported
-	}
-	if v.Created > 0 {
-		e.Time = time.Unix(v.Created, 0)
-	}
-	// Encrypted URLs and keys remain Native-only, not in default persistence/log JSON.
-	add := func(kind string) {
-		e.Attachments = append(e.Attachments, gateway.Attachment{Kind: kind, Ref: v.ID + ":" + kind})
-	}
-	switch v.Type {
-	case "text":
-		e.Text = v.Text.Content
-	case "voice":
-		e.Text = v.Voice.Content
-	case "image", "file", "video":
-		add(v.Type)
-	case "mixed":
-		for _, x := range v.Mixed.Items {
-			switch x.Type {
-			case "text":
-				if e.Text != "" {
-					e.Text += "\n"
-				}
-				e.Text += x.Text.Content
-			case "image":
-				add("image")
-			}
-		}
-	default:
-		return gateway.Event{}, gateway.ErrUnsupported
-	}
-	if e.ID == "" || e.SenderID == "" || e.Route.Validate() != nil || f.Headers["req_id"] == "" {
-		return gateway.Event{}, gateway.ErrInvalidEvent
-	}
-	a.replies.Put(wire.ContextKey(e.Route, e.MessageID), replyContext{s, f.Headers["req_id"]}, time.Now().Add(5*time.Minute))
-	return e, nil
-}
 func (a *Adapter) reply(r gateway.Route, id string) (replyContext, error) {
 	v, ok := a.replies.Get(wire.ContextKey(r, id))
 	if !ok || v.session == nil || v.session != a.active() || v.session.ctx.Err() != nil {
@@ -292,11 +218,14 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 	if r.TenantID != a.cfg.TenantID || (r.Kind != "direct" && r.Kind != "group") {
 		return gateway.Receipt{}, gateway.ErrInvalidEvent
 	}
-	if r.ThreadID != "" || len(m.Attachments) > 0 || len(m.Text) > 20480 {
+	if r.ThreadID != "" || len(m.Text) > 20480 {
 		return gateway.Receipt{}, gateway.ErrUnsupported
 	}
 	if len(m.Card) > 0 && (!json.Valid(m.Card) || m.Text != "") {
 		return gateway.Receipt{}, gateway.ErrUnsupported
+	}
+	if len(m.Attachments) > 0 {
+		return a.sendMedia(ctx, r, m)
 	}
 	if m.ReplyTo != "" {
 		if len(m.Card) == 0 {

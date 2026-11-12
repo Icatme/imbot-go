@@ -1,0 +1,28 @@
+{
+  "op": 0,
+  "t": "C2C_MESSAGE_CREATE",
+  "d": {
+    "id": "voice-message",
+    "message_type": 103,
+    "author": {"user_openid": "user"},
+    "content": "current caption",
+    "attachments": [{
+      "content_type": "voice",
+      "filename": "current.silk",
+      "url": "https://multimedia.nt.qq.com.cn/current.silk?private=original",
+      "voice_wav_url": "https://multimedia.nt.qq.com.cn/current.wav?private=wav",
+      "asr_refer_text": "current transcript"
+    }],
+    "msg_elements": [{
+      "msg_idx": "reference-index",
+      "content": "quoted caption",
+      "attachments": [{
+        "content_type": "voice",
+        "filename": "quoted.silk",
+        "url": "https://multimedia.nt.qq.com.cn/quoted.silk?private=quoted",
+        "voice_wav_url": "https://multimedia.nt.qq.com.cn/quoted.wav?private=quoted-wav",
+        "asr_refer_text": "quoted transcript"
+      }]
+    }]
+  }
+}

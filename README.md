@@ -18,6 +18,11 @@ go get github.com/Icatme/wechatbot-go
 
 要求 Go 1.25+，零 CGO 依赖。
 
+## 开发分支：消息内容与媒体传输
+
+开发分支补齐常用富文本、显式附件上传下载、引用与卡片事件，以及可追踪部分成功的长文本/批量发送。
+这些改动尚未包含在 v0.8.0 标签中，接口与限制见[消息与媒体契约](docs/channels/media.md)。
+
 ## 最近版本（v0.8.0）：多通道 Gateway 与扫码注册
 
 - 新增 `gateway`：统一账号、租户、会话和线程路由，提供显式授权、接入去重、按会话串行接入和能力查询。
@@ -27,7 +32,7 @@ go get github.com/Icatme/wechatbot-go
 
 原微信根包 API 和 module path 保持不变；新增通道按需导入，要求仍为 Go 1.25+，未增加第三方依赖。
 企微自建应用使用已有凭据；QQ 扫码取得凭据后仍需配置 HTTPS 消息回调。
-统一层尚不提供媒体上传下载、持久 inbox/outbox 或跨副本账号租约；真实平台账号与 UI 验收仍需使用者完成。
+v0.8.0 的统一层尚不提供媒体上传下载、持久 inbox/outbox 或跨副本账号租约；开发分支的媒体扩展见上节，真实平台账号与 UI 验收仍需使用者完成。
 
 接入说明见[多通道 Gateway](docs/channels/README.md)、[扫码接入](docs/channels/onboarding.md)和[能力矩阵](docs/channels/capabilities.md)。
 完整版本说明见 [v0.8.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.0)。

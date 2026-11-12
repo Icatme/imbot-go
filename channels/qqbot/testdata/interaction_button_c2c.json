@@ -1,0 +1,20 @@
+{
+  "op": 0,
+  "t": "INTERACTION_CREATE",
+  "d": {
+    "id": "interaction",
+    "type": 2,
+    "version": 1,
+    "chat_type": 2,
+    "user_openid": "user",
+    "data": {
+      "type": 11,
+      "resolved": {
+        "button_id": "confirm",
+        "button_data": "chosen",
+        "user_id": "user",
+        "message_id": "original"
+      }
+    }
+  }
+}

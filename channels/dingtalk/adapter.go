@@ -29,10 +29,11 @@ type replyContext struct {
 	Expires time.Time
 }
 type Adapter struct {
-	cfg     Config
-	guard   wire.Guard
-	token   wire.TokenCache
-	replies *wire.Cache[replyContext]
+	cfg       Config
+	guard     wire.Guard
+	token     wire.TokenCache
+	replies   *wire.Cache[replyContext]
+	resources *wire.Cache[string]
 }
 
 func New(c Config) (*Adapter, error) {
@@ -49,13 +50,13 @@ func New(c Config) (*Adapter, error) {
 	if strings.ContainsAny(c.SessionWebhookHost, "/@?#") {
 		return nil, errors.New("dingtalk: webhook host must be an exact authority")
 	}
-	return &Adapter{cfg: c, replies: wire.NewCache[replyContext](4096)}, nil
+	return &Adapter{cfg: c, replies: wire.NewCache[replyContext](4096), resources: wire.NewCache[string](4096)}, nil
 }
 func (a *Adapter) Account() gateway.Account {
 	return gateway.Account{Platform: "dingtalk", ID: a.cfg.AccountID}
 }
 func (a *Adapter) Capabilities() gateway.Capabilities {
-	return gateway.Capabilities{Text: true, Markdown: true, Reply: true, ReceiveMedia: true, Proactive: a.cfg.RobotCode != ""}
+	return gateway.Capabilities{MaxTextBytes: 20000, Text: true, Markdown: true, Reply: true, ReceiveMedia: true, DownloadMedia: true, Proactive: a.cfg.RobotCode != ""}
 }
 func (a *Adapter) Run(ctx context.Context, sink gateway.Sink) error {
 	if sink == nil {
@@ -106,12 +107,15 @@ type incoming struct {
 	Text      struct {
 		Content string `json:"content"`
 	} `json:"text"`
-	Content struct {
-		DownloadCode string `json:"downloadCode"`
-		PictureCode  string `json:"pictureDownloadCode"`
-		FileName     string `json:"fileName"`
-		Recognition  string `json:"recognition"`
-	} `json:"content"`
+	Content json.RawMessage `json:"content"`
+}
+
+type incomingContent struct {
+	DownloadCode string        `json:"downloadCode"`
+	PictureCode  string        `json:"pictureDownloadCode"`
+	FileName     string        `json:"fileName"`
+	Recognition  string        `json:"recognition"`
+	RichText     []richElement `json:"richText"`
 }
 
 func (a *Adapter) validWebhook(raw string) bool {
@@ -136,7 +140,7 @@ func (a *Adapter) Decode(data []byte, eventID string) (gateway.Event, error) {
 	if sender == "" {
 		sender = v.Sender
 	}
-	e := gateway.Event{ID: eventID, MessageID: v.ID, SenderID: sender, Text: v.Text.Content, Mentioned: v.Mentioned, Time: time.UnixMilli(v.Created), Route: gateway.Route{Account: a.Account(), TenantID: v.Corp, ChatID: v.Chat, Kind: "group"}}
+	e := gateway.Event{MessageType: v.Type, ID: eventID, MessageID: v.ID, SenderID: sender, Text: v.Text.Content, Mentioned: v.Mentioned, Time: time.UnixMilli(v.Created), Route: gateway.Route{Account: a.Account(), TenantID: v.Corp, ChatID: v.Chat, Kind: "group"}}
 	if e.ID == "" {
 		e.ID = v.ID
 	}
@@ -146,7 +150,7 @@ func (a *Adapter) Decode(data []byte, eventID string) (gateway.Event, error) {
 		e.Route.ChatID = sender
 	case "2":
 	default:
-		return gateway.Event{}, gateway.ErrUnsupported
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "dingtalk", MessageType: "conversation/" + v.Kind}
 	}
 	if e.Route.Kind == "group" && !a.cfg.RespondWithoutMention && !v.Mentioned {
 		return gateway.Event{}, gateway.ErrUnauthorized
@@ -154,17 +158,40 @@ func (a *Adapter) Decode(data []byte, eventID string) (gateway.Event, error) {
 	if e.MessageID == "" || sender == "" || e.Route.Validate() != nil {
 		return gateway.Event{}, gateway.ErrInvalidEvent
 	}
+	var content incomingContent
+	switch v.Type {
+	case "richText", "picture", "image", "file", "audio", "video":
+		if err := json.Unmarshal(v.Content, &content); err != nil {
+			return gateway.Event{}, gateway.ErrInvalidEvent
+		}
+	}
 	switch v.Type {
 	case "text":
-	case "picture", "image", "file", "audio", "video":
-		ref := v.Content.DownloadCode
-		if ref == "" {
-			ref = v.Content.PictureCode
+	case "richText":
+		var err error
+		e.Text, e.Attachments, e.Parts, err = decodeRichText(content.RichText)
+		if err != nil {
+			return gateway.Event{}, err
 		}
-		e.Attachments = []gateway.Attachment{{Kind: v.Type, Ref: ref, Name: v.Content.FileName}}
-		e.Text = v.Content.Recognition
+	case "picture", "image", "file", "audio", "video":
+		ref := content.DownloadCode
+		if ref == "" {
+			ref = content.PictureCode
+		}
+		e.Text = content.Recognition
+		if ref == "" {
+			if v.Type == "audio" && e.Text != "" {
+				break
+			}
+			return gateway.Event{}, gateway.ErrInvalidEvent
+		}
+		kind := v.Type
+		if kind == "picture" {
+			kind = "image"
+		}
+		e.Attachments = []gateway.Attachment{{Kind: kind, Ref: ref, Name: content.FileName}}
 	default:
-		return gateway.Event{}, gateway.ErrUnsupported
+		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "dingtalk", MessageType: v.Type}
 	}
 	if v.Webhook != "" {
 		if !a.validWebhook(v.Webhook) {
@@ -176,12 +203,17 @@ func (a *Adapter) Decode(data []byte, eventID string) (gateway.Event, error) {
 		}
 		a.replies.Put(wire.ContextKey(e.Route, e.MessageID), replyContext{v.Webhook, expires}, expires)
 	}
+	a.bindResources(&e)
 	return e, nil
 }
 func (a *Adapter) handle(ctx context.Context, f streamFrame, sink gateway.Sink) (ack, bool) {
 	code := 200
 	if f.Type == "CALLBACK" && f.Headers["topic"] == topic {
 		e, err := a.Decode([]byte(f.Data), f.Headers["messageId"])
+		var unsupported *gateway.UnsupportedMessageError
+		if errors.As(err, &unsupported) {
+			wire.ReportUnsupported(unsupported, a.cfg.OnError)
+		}
 		if err == nil {
 			err = sink(ctx, e)
 		}
@@ -333,7 +365,7 @@ func (a *Adapter) Send(ctx context.Context, r gateway.Route, m gateway.Message) 
 	if err != nil {
 		var api *gateway.APIError
 		if errors.As(err, &api) && api.Status == 401 {
-			a.token.Invalidate()
+			a.token.Invalidate(token)
 		}
 		return gateway.Receipt{}, err
 	}

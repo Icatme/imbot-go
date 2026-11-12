@@ -47,27 +47,60 @@ func key(parts ...string) string { b, _ := json.Marshal(parts); return string(b)
 // Attachment is a descriptor, never an instruction to fetch an arbitrary URL.
 // Ref is platform-owned (image_key, media_id, downloadCode, etc.).
 type Attachment struct {
-	Kind string `json:"kind"`
-	Ref  string `json:"ref,omitempty"`
-	Name string `json:"name,omitempty"`
-	URL  string `json:"url,omitempty"`
-	Size int64  `json:"size,omitempty"`
+	Kind      string    `json:"kind"`
+	Ref       string    `json:"ref,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	URL       string    `json:"url,omitempty"`
+	Size      int64     `json:"size,omitempty"`
+	MIME      string    `json:"mime,omitempty"`
+	MessageID string    `json:"message_id,omitempty"`
+	Scope     *Route    `json:"scope,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
+}
+
+// ContentPart preserves the order of text and attachments in a platform message.
+// Exactly one of Text and Attachment is populated. Text is a plain-text projection,
+// not executable HTML or a promise to reproduce every platform styling feature.
+type ContentPart struct {
+	Text       string      `json:"text,omitempty"`
+	Attachment *Attachment `json:"attachment,omitempty"`
+}
+
+// Quote keeps referenced content separate from the current message's attachments.
+type Quote struct {
+	MessageID   string       `json:"message_id,omitempty"`
+	Text        string       `json:"text,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// Interaction is authenticated platform action data, not authorization to execute
+// a business operation. It passes through the same Authorize/Sink as messages.
+// Value contains platform-specific JSON; hosts must validate its schema and policy.
+type Interaction struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	MessageID string          `json:"message_id,omitempty"`
+	Value     json.RawMessage `json:"value,omitempty"`
 }
 
 // Event contains only normalized, persistable metadata. Native may contain secrets;
 // it is deliberately excluded from JSON and must never be logged blindly.
 type Event struct {
-	ID          string       `json:"id"`
-	MessageID   string       `json:"message_id"`
-	Route       Route        `json:"route"`
-	SenderID    string       `json:"sender_id"`
-	SenderIsBot bool         `json:"sender_is_bot,omitempty"`
-	Mentioned   bool         `json:"mentioned,omitempty"`
-	Text        string       `json:"text,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"`
-	ReplyTo     string       `json:"reply_to,omitempty"`
-	Time        time.Time    `json:"time"`
-	Native      any          `json:"-"`
+	ID          string        `json:"id"`
+	MessageID   string        `json:"message_id"`
+	Route       Route         `json:"route"`
+	SenderID    string        `json:"sender_id"`
+	SenderIsBot bool          `json:"sender_is_bot,omitempty"`
+	Mentioned   bool          `json:"mentioned,omitempty"`
+	Text        string        `json:"text,omitempty"`
+	Attachments []Attachment  `json:"attachments,omitempty"`
+	ReplyTo     string        `json:"reply_to,omitempty"`
+	Time        time.Time     `json:"time"`
+	Native      any           `json:"-"`
+	MessageType string        `json:"message_type,omitempty"`
+	Parts       []ContentPart `json:"parts,omitempty"`
+	Quote       *Quote        `json:"quote,omitempty"`
+	Interaction *Interaction  `json:"interaction,omitempty"`
 }
 
 func (e Event) Reply(text string) Message { return Message{Text: text, ReplyTo: e.MessageID} }
@@ -89,7 +122,15 @@ type Receipt struct {
 	MessageID string `json:"message_id,omitempty"`
 	Accepted  bool   `json:"accepted"`
 }
-type Capabilities struct{ Text, Markdown, Reply, ReceiveMedia, SendMedia, Card, Stream, Proactive bool }
+
+// ReceiveMedia describes attachment recognition; SendMedia sends an existing
+// platform resource. DownloadMedia and UploadMedia explicitly advertise byte IO.
+type Capabilities struct {
+	Text, Markdown, Reply, ReceiveMedia, SendMedia, DownloadMedia, UploadMedia, Card, Stream, Proactive bool
+	// MaxTextBytes is the adapter's conservative per-message UTF-8 payload budget.
+	// Zero means automatic splitting is not advertised, not an unlimited message.
+	MaxTextBytes int
+}
 
 // Sink is a bounded-latency admission callback. Return nil only after completing
 // processing OR durably accepting the event. Do not run a slow LLM inside a webhook.

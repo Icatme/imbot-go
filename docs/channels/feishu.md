@@ -31,15 +31,18 @@ adapter, err := feishu.New(credentials.Config("customer-a-feishu"))
 ## 当前能力
 
 - endpoint discovery、二进制 protobuf Frame、Ping/Pong、分片合并、成功/失败 ACK、取消与退避重连。
-- 文本/图片/文件等接收，保留 tenant/chat/thread/reply 关系。
-- 文本、原生 interactive card JSON、已上传 image_key/file_key 发送；回复与 thread reply。
+- 文本、post 富文本、图片/文件等接收，Parts 保留图文顺序，Quote 与当前附件分离；保留真实 tenant/chat/thread/reply 关系。
+- 文本、Markdown post、原生 interactive card JSON、已上传图片/文件/Opus/MP4 发送；支持显式资源下载与 multipart 上传、图片/视频 caption、回复与 thread reply。
 - ClientID 转换成稳定 uuid。平台 API 的幂等窗口仍由飞书决定。
 - 可选 Webhook：Handler(sink) 由宿主挂载 HTTPS；要求 EncryptKey + VerificationToken；检查时间窗、SHA256 签名、AES-CBC、token/app_id 后再接入。挑战请求也必须认证。
 - 原生回复 API 仅携带 message_id，所以额外缓存已接收消息的完整 Route+MessageID 绑定（30 分钟、4096 条上限）。跨聊天、未知或过期回复返回 ErrReplyExpired，不能通过传错 ChatID 绕过路由检查。该缓存不是业务出站 ACL，应用仍需做权限验证。
+- Upload 返回本地不透明 Ref，通过独立的 30 分钟完整路由缓存解析，不能修改公开 Scope 后跨会话复用。原生外部 image_key/file_key 仍可由可信宿主显式提供。图片预检识别 TIFF/HEIC，平台负责最终格式和分辨率校验。
+- Interaction.Value 保留完整原生 action 对象，包括表单、输入与多选值；不包含事件级卡片 token。媒体 API 明确报告 token 失效时清除缓存，当前失败不自动重试。
+- Send、Upload、Download 都识别 HTTP 401 及非 2xx 中明确的数值认证错误；错误体有界且不写入诊断。失效只作用于该请求实际使用的 token。未知 chat_type 不猜测成群聊，而是通过既有 unsupported 诊断后消费。
 
 ## 尚未覆盖
 
-不提供媒体文件上传/下载、音视频转码、审批/卡片点击处理、高层流式卡片 API；原生 Card 的结构与权限由调用方负责。当前接收解析器尚不支持 post 富文本，未知事件不触发 Agent。Markdown 字符串不会自动变成飞书卡片，显式返回 Unsupported。
+不提供音视频自动转码、业务审批执行、高层流式卡片 API 或消息编辑。原生 Card 的结构与权限由调用方负责；card.action.trigger 经认证和已发送卡片的完整 Route 缓存核验后进入同一 Authorize/Sink。未知类型通过 OnError 或默认 slog 报告再消费。Markdown 明确发送为 post，不隐式改成卡片；媒体、卡片缓存期限与格式限制见[媒体契约](media.md)。
 
 参考 Python/Node 最新实现及 Go Frame 字段，来源登记在 references.md。已做本地 mock/fixture/race 测试，未使用真实飞书账号做权限、限流和长时间断线验收。上线前必须在目标应用控制台订阅 im.message.receive_v1、授予所需消息权限并完成真实联调。
 

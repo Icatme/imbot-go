@@ -13,6 +13,7 @@ import (
 	"github.com/Icatme/wechatbot-go/internal/crypto"
 	"github.com/Icatme/wechatbot-go/internal/protocol"
 	"github.com/Icatme/wechatbot-go/internal/redact"
+	"github.com/Icatme/wechatbot-go/internal/remote"
 )
 
 const maxDownloadBytes = 100 * 1024 * 1024
@@ -32,8 +33,8 @@ func (b *Bot) Download(ctx context.Context, msg *IncomingMessage) (*DownloadedMe
 }
 
 func (b *Bot) downloadCurrent(ctx context.Context, msg *IncomingMessage) (*DownloadedMedia, error) {
-	if len(msg.Images) > 0 && msg.Images[0].Media != nil {
-		data, err := b.cdnDownload(ctx, msg.Images[0].Media, msg.Images[0].AESKey)
+	if len(msg.Images) > 0 {
+		data, err := b.DownloadImage(ctx, msg.Images[0])
 		if err != nil {
 			return nil, err
 		}
@@ -76,6 +77,24 @@ func (b *Bot) DownloadRaw(ctx context.Context, media *CDNMedia, aeskeyOverride s
 	return b.cdnDownload(ctx, media, aeskeyOverride)
 }
 
+// DownloadImage explicitly downloads one parsed image without changing the quote
+// cache. Media identifies an encrypted CDN object; URL is the protocol's separate
+// plaintext image representation. An invalid encrypted object never falls back
+// to URL. Both paths use this Bot's HTTP client and enforce their byte limits.
+func (b *Bot) DownloadImage(ctx context.Context, image ImageContent) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if image.Media != nil {
+		return b.cdnDownload(ctx, image.Media, image.AESKey)
+	}
+	if image.URL == "" {
+		return nil, fmt.Errorf("missing image media")
+	}
+	data, _, err := remote.DownloadWithClient(ctx, b.client.HTTP, image.URL)
+	return data, err
+}
+
 // Upload uploads data to WeChat CDN without sending a message.
 func (b *Bot) Upload(ctx context.Context, data []byte, userID string, mediaType int) (*UploadResult, error) {
 	_, sessionGeneration, err := b.readySessionForContext(ctx)
@@ -85,7 +104,30 @@ func (b *Bot) Upload(ctx context.Context, data []byte, userID string, mediaType 
 	return b.cdnUpload(ctx, sessionGeneration, data, userID, mediaType)
 }
 
+// UploadForReply uploads using the inbound message's original session. In
+// particular, a queued reply from before reauthentication cannot upload with new
+// credentials. Send the result through ReplyMessage with OutboundMessage.Upload.
+func (b *Bot) UploadForReply(ctx context.Context, inbound *IncomingMessage, data []byte, mediaType int) (*UploadResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if inbound == nil {
+		return nil, fmt.Errorf("inbound message is nil")
+	}
+	generation, err := b.incomingSessionGeneration(inbound)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireContextToken(inbound.UserID, inbound.ContextToken); err != nil {
+		return nil, err
+	}
+	return b.cdnUpload(ctx, generation, data, inbound.UserID, mediaType)
+}
+
 func (b *Bot) cdnDownload(ctx context.Context, media *CDNMedia, aeskeyOverride string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if media == nil {
 		return nil, fmt.Errorf("missing CDN media")
 	}
@@ -108,7 +150,7 @@ func (b *Bot) cdnDownload(ctx context.Context, media *CDNMedia, aeskeyOverride s
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("cdn download failed: HTTP %d", resp.StatusCode)
 	}
 
@@ -119,6 +161,9 @@ func (b *Bot) cdnDownload(ctx context.Context, media *CDNMedia, aeskeyOverride s
 	}
 	if len(ciphertext) > maxDownloadBytes {
 		return nil, fmt.Errorf("cdn download exceeds %d bytes", maxDownloadBytes)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	keySource := aeskeyOverride
@@ -134,7 +179,14 @@ func (b *Bot) cdnDownload(ctx context.Context, media *CDNMedia, aeskeyOverride s
 		return nil, fmt.Errorf("decode aes key: %w", err)
 	}
 
-	return crypto.DecryptAESECB(ciphertext, aesKey)
+	data, err := crypto.DecryptAESECB(ciphertext, aesKey)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (b *Bot) cdnUpload(ctx context.Context, sessionGeneration uint64, data []byte, userID string, mediaType int) (*UploadResult, error) {
@@ -142,6 +194,9 @@ func (b *Bot) cdnUpload(ctx context.Context, sessionGeneration uint64, data []by
 }
 
 func (b *Bot) cdnUploadWithThumb(ctx context.Context, sessionGeneration uint64, data, thumbData []byte, userID string, mediaType int) (*UploadResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	aesKey, err := crypto.GenerateAESKey()
 	if err != nil {
 		return nil, fmt.Errorf("generate aes key: %w", err)
@@ -185,6 +240,9 @@ func (b *Bot) cdnUploadWithThumb(ctx context.Context, sessionGeneration uint64, 
 		thumbReq.ThumbFileMD5 = hex.EncodeToString(thumbMD5[:])
 		thumbReq.ThumbFileSize = len(thumbCipher)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	uploadResp, requestToken, err := authenticatedRequestResult(b, ctx, sessionGeneration, func(requestContext context.Context, baseURL, token string) (*protocol.GetUploadURLResponse, error) {
 		return b.client.GetUploadURL(requestContext, baseURL, token, thumbReq)
 	})
@@ -202,6 +260,9 @@ func (b *Bot) cdnUploadWithThumb(ctx context.Context, sessionGeneration uint64, 
 		uploadURL = protocol.BuildCDNUploadURL(protocol.CDNBaseURL, uploadResp.UploadParam, fileKey)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	encryptQueryParam, err := b.client.UploadToCDN(ctx, uploadURL, ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("cdn upload: %w", err)
@@ -218,6 +279,9 @@ func (b *Bot) cdnUploadWithThumb(ctx context.Context, sessionGeneration uint64, 
 	}
 
 	if thumbData != nil && uploadResp.ThumbUploadParam != "" {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		thumbCipher, err := crypto.EncryptAESECB(thumbData, thumbAESKey)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt thumb for upload: %w", err)
@@ -238,6 +302,7 @@ func (b *Bot) cdnUploadWithThumb(ctx context.Context, sessionGeneration uint64, 
 	if _, err := b.readySession(sessionGeneration); err != nil {
 		return nil, err
 	}
+	result.binding = &uploadBinding{bot: b, generation: sessionGeneration, userID: userID, mediaType: mediaType, media: result.Media, thumb: result.ThumbMedia}
 
 	return result, nil
 }

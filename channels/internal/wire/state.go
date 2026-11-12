@@ -13,22 +13,50 @@ import (
 
 // TokenCache is per adapter/account. Failed refreshes are never cached.
 type TokenCache struct {
-	mu      sync.Mutex
-	value   string
-	expires time.Time
+	mu         sync.Mutex
+	value      string
+	expires    time.Time
+	refreshing chan struct{}
 }
 
 func (t *TokenCache) Get(ctx context.Context, fetch func(context.Context) (string, time.Duration, error)) (string, error) {
+	for {
+		t.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			t.mu.Unlock()
+			return "", err
+		}
+		if t.value != "" && time.Now().Before(t.expires) {
+			value := t.value
+			t.mu.Unlock()
+			return value, nil
+		}
+		if pending := t.refreshing; pending != nil {
+			t.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-pending:
+				continue
+			}
+		}
+		t.refreshing = make(chan struct{})
+		t.mu.Unlock()
+		break
+	}
+	// Never hold the state lock across network IO. Other callers wait on the
+	// refresh completion or their own cancellation; there is still one fetch.
+	v, ttl, err := fetch(ctx)
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-	if t.value != "" && time.Now().Before(t.expires) {
-		return t.value, nil
-	}
-	v, ttl, err := fetch(ctx)
+	defer func() {
+		close(t.refreshing)
+		t.refreshing = nil
+	}()
 	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	if v == "" || ttl <= 0 {
@@ -42,9 +70,15 @@ func (t *TokenCache) Get(ctx context.Context, fetch func(context.Context) (strin
 	t.expires = time.Now().Add(ttl - margin)
 	return v, nil
 }
-func (t *TokenCache) Invalidate() {
+
+// Invalidate rejects only the token used by the failed request. A delayed
+// authentication error from an older request must not discard a newer token.
+func (t *TokenCache) Invalidate(rejectedToken string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if rejectedToken == "" || t.value != rejectedToken {
+		return
+	}
 	t.value = ""
 	t.expires = time.Time{}
 }
