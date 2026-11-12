@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net/http"
@@ -26,17 +27,27 @@ func TestHTTPRedirectAndRedaction(t *testing.T) {
 	defer src.Close()
 	err := JSON(context.Background(), nil, "x", "POST", src.URL+"?secret=credential", Bearer("secret"), map[string]string{"x": "y"}, nil)
 	var api *gateway.APIError
-	if !errors.As(err, &api) || api.Status != 307 || hit.Load() || strings.Contains(err.Error(), "credential") { t.Fatal(err) }
+	if !errors.As(err, &api) || api.Status != 307 || hit.Load() || strings.Contains(err.Error(), "credential") {
+		t.Fatal(err)
+	}
 }
 func TestHTTPSizeLimit(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, strings.Repeat("x", MaxBody+1)) }))
 	defer s.Close()
 	var out any
-	if JSON(context.Background(), nil, "x", "GET", s.URL, nil, nil, &out) == nil { t.Fatal("unbounded") }
+	if JSON(context.Background(), nil, "x", "GET", s.URL, nil, nil, &out) == nil {
+		t.Fatal("unbounded")
+	}
 }
 func TestEndpoints(t *testing.T) {
-	for _, s := range []string{"http://evil.test", "https://u:p@example.com", "file:///etc/passwd", "https://example.com/#secret"} { if Endpoint(s) == nil { t.Fatal(s) } }
-	if Endpoint("http://127.0.0.1:1234") != nil { t.Fatal("loopback rejected") }
+	for _, s := range []string{"http://evil.test", "https://u:p@example.com", "file:///etc/passwd", "https://example.com/#secret"} {
+		if Endpoint(s) == nil {
+			t.Fatal(s)
+		}
+	}
+	if Endpoint("http://127.0.0.1:1234") != nil {
+		t.Fatal("loopback rejected")
+	}
 }
 func TestTokenCacheConcurrent(t *testing.T) {
 	var cache TokenCache
@@ -47,31 +58,51 @@ func TestTokenCacheConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			v, err := cache.Get(context.Background(), func(context.Context) (string, time.Duration, error) { n.Add(1); return "token", time.Hour, nil })
-			if err != nil || v != "token" { t.Error(v, err) }
+			if err != nil || v != "token" {
+				t.Error(v, err)
+			}
 		}()
 	}
 	wg.Wait()
-	if n.Load() != 1 { t.Fatal(n.Load()) }
+	if n.Load() != 1 {
+		t.Fatal(n.Load())
+	}
 }
 func TestCacheExpiryAndBound(t *testing.T) {
 	c := NewCache[string](1)
 	c.Put("a", "secret", time.Now().Add(time.Minute))
 	c.Put("b", "next", time.Now().Add(time.Hour))
-	if _, ok := c.Get("a"); ok { t.Fatal("not bounded") }
+	if _, ok := c.Get("a"); ok {
+		t.Fatal("not bounded")
+	}
 	c.Put("c", "expired", time.Now().Add(-time.Second))
-	if _, ok := c.Get("c"); ok { t.Fatal("expired") }
+	if _, ok := c.Get("c"); ok {
+		t.Fatal("expired")
+	}
 }
 func TestFresh(t *testing.T) {
 	now := time.Unix(1000, 0)
-	if !Fresh("1000", now, time.Minute) || Fresh("1", now, time.Minute) || Fresh("broken", now, time.Minute) { t.Fatal("timestamp") }
+	if !Fresh("1000", now, time.Minute) || Fresh("1", now, time.Minute) || Fresh("broken", now, time.Minute) {
+		t.Fatal("timestamp")
+	}
 }
 func TestCBCRejectsMalformed(t *testing.T) {
-	for _, b := range [][]byte{nil, {1}, make([]byte, 16)} { if _, err := DecryptCBC(make([]byte, 32), make([]byte, 16), b, 16); err == nil { t.Fatal("bad ciphertext accepted") } }
+	for _, b := range [][]byte{nil, {1}, make([]byte, 16)} {
+		if _, err := DecryptCBC(make([]byte, 32), make([]byte, 16), b, 16); err == nil {
+			t.Fatal("bad ciphertext accepted")
+		}
+	}
 }
-type memDuplex struct { r *bytes.Reader; w bytes.Buffer; closed bool }
-func (m *memDuplex) Read(p []byte) (int, error) { return m.r.Read(p) }
+
+type memDuplex struct {
+	r      *bytes.Reader
+	w      bytes.Buffer
+	closed bool
+}
+
+func (m *memDuplex) Read(p []byte) (int, error)  { return m.r.Read(p) }
 func (m *memDuplex) Write(p []byte) (int, error) { return m.w.Write(p) }
-func (m *memDuplex) Close() error { m.closed = true; return nil }
+func (m *memDuplex) Close() error                { m.closed = true; return nil }
 func socketFor(b []byte) (*Socket, *memDuplex) {
 	m := &memDuplex{r: bytes.NewReader(b)}
 	return &Socket{body: m, cancel: func() {}, write: make(chan struct{}, 1)}, m
@@ -79,26 +110,42 @@ func socketFor(b []byte) (*Socket, *memDuplex) {
 func TestWSFragmentsAndPing(t *testing.T) {
 	s, m := socketFor([]byte{1, 2, 'h', 'e', 0x89, 1, 'p', 0x80, 3, 'l', 'l', 'o'})
 	op, b, err := s.Read(context.Background())
-	if err != nil || op != 1 || string(b) != "hello" { t.Fatal(op, string(b), err) }
-	if m.w.Len() < 7 || m.w.Bytes()[0] != 0x8a || m.w.Bytes()[1]&0x80 == 0 { t.Fatal("missing masked pong") }
+	if err != nil || op != 1 || string(b) != "hello" {
+		t.Fatal(op, string(b), err)
+	}
+	if m.w.Len() < 7 || m.w.Bytes()[0] != 0x8a || m.w.Bytes()[1]&0x80 == 0 {
+		t.Fatal("missing masked pong")
+	}
 }
 func TestWSRejectsFrames(t *testing.T) {
 	for _, b := range [][]byte{{0x81, 0x80}, {0xc1, 0}, {0x80, 0}, {0x09, 0}, {0x83, 0}, {0x81, 1, 0xff}, {0x81, 126, 0, 1, 'a'}} {
 		s, _ := socketFor(b)
-		if _, _, err := s.Read(context.Background()); err == nil { t.Fatalf("accepted %x", b) }
+		if _, _, err := s.Read(context.Background()); err == nil {
+			t.Fatalf("accepted %x", b)
+		}
 	}
 }
 func TestWSMasksOutbound(t *testing.T) {
 	s, m := socketFor(nil)
-	if err := s.Write(context.Background(), 1, []byte("test")); err != nil { t.Fatal(err) }
+	if err := s.Write(context.Background(), 1, []byte("test")); err != nil {
+		t.Fatal(err)
+	}
 	b := m.w.Bytes()
-	if b[1] != 0x84 { t.Fatal("unmasked") }
-	for i := 0; i < 4; i++ { if b[6+i]^b[2+i] != []byte("test")[i] { t.Fatal("wrong mask") } }
+	if b[1] != 0x84 {
+		t.Fatal("unmasked")
+	}
+	for i := 0; i < 4; i++ {
+		if b[6+i]^b[2+i] != []byte("test")[i] {
+			t.Fatal("wrong mask")
+		}
+	}
 }
 func TestWSUpgrade(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, rw, err := w.(http.Hijacker).Hijack()
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 		defer conn.Close()
 		sum := sha1.Sum([]byte(r.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
 		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: " + base64.StdEncoding.EncodeToString(sum[:]) + "\r\n\r\n")
@@ -109,8 +156,72 @@ func TestWSUpgrade(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	s, err := Dial(ctx, nil, strings.Replace(srv.URL, "http:", "ws:", 1))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer s.Close()
 	_, b, err := s.Read(ctx)
-	if err != nil || string(b) != "ok" { t.Fatal(string(b), err) }
+	if err != nil || string(b) != "ok" {
+		t.Fatal(string(b), err)
+	}
+}
+
+func TestWSControlFramesDoNotCountAsFragments(t *testing.T) {
+	b := bytes.Repeat([]byte{0x8a, 0}, 4096)
+	b = append(b, 0x81, 2, 'o', 'k')
+	s, _ := socketFor(b)
+	_, p, err := s.Read(context.Background())
+	if err != nil || string(p) != "ok" {
+		t.Fatalf("idle pong frames exhausted data fragment budget: %q %v", p, err)
+	}
+}
+
+func TestWSControlFramesDoNotCountTowardMessageSize(t *testing.T) {
+	b := []byte{0x02, 127}
+	b = binary.BigEndian.AppendUint64(b, MaxBody)
+	b = append(b, make([]byte, MaxBody)...)
+	b = append(b, 0x89, 1, 'p', 0x80, 0)
+	s, _ := socketFor(b)
+	_, p, err := s.Read(context.Background())
+	if err != nil || len(p) != MaxBody {
+		t.Fatalf("interleaved ping rejected maximum size message: %d %v", len(p), err)
+	}
+}
+
+func TestWSCloseHandshakeAndInvalidCodes(t *testing.T) {
+	s, m := socketFor([]byte{0x88, 2, 3, 232}) // normal closure, 1000
+	if _, _, err := s.Read(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+	if !m.closed || m.w.Len() != 8 || m.w.Bytes()[0] != 0x88 {
+		t.Fatal("close response or transport close missing")
+	}
+	for _, code := range []uint16{999, 1004, 1005, 1006, 1015, 2000, 5000} {
+		b := binary.BigEndian.AppendUint16([]byte{0x88, 2}, code)
+		s, m := socketFor(b)
+		if _, _, err := s.Read(context.Background()); err == nil || errors.Is(err, io.EOF) || !m.closed {
+			t.Fatalf("invalid close code %d did not fail the connection: %v", code, err)
+		}
+	}
+}
+
+type failingWriter struct {
+	memDuplex
+	calls int
+}
+
+func (m *failingWriter) Write(p []byte) (int, error) {
+	m.calls++
+	if m.calls == 1 {
+		return 1, nil
+	}
+	return 0, errors.New("write failed")
+}
+
+func TestWSPartialWriteClosesTransport(t *testing.T) {
+	m := &failingWriter{}
+	s := &Socket{body: m, cancel: func() {}, write: make(chan struct{}, 1)}
+	if err := s.Write(context.Background(), 1, []byte("payload")); err == nil || !m.closed {
+		t.Fatalf("partial frame left transport reusable: %v", err)
+	}
 }

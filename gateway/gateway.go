@@ -113,7 +113,7 @@ func (g *Gateway) Accept(ctx context.Context, e Event) (err error) {
 	if e.SenderIsBot {
 		return nil
 	}
-	k := key(e.Route.Platform, e.Route.ID, e.Route.TenantID, e.Route.ChatID, e.ID)
+	k := key(e.Route.SessionKey(), e.ID)
 	g.mu.Lock()
 	now := time.Now()
 	for id, v := range g.seen {

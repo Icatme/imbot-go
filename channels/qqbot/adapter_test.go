@@ -95,7 +95,7 @@ func TestTamperAndUnsigned(t *testing.T) {
 type byteBody struct{ *bytes.Reader }
 
 func (b byteBody) Close() error { return nil }
-func ioBody(b []byte) byteBody { return byteBody{bytes.NewReader(b)} }
+func ioBody(b []byte) byteBody  { return byteBody{bytes.NewReader(b)} }
 func TestOldTimestamp(t *testing.T) {
 	a := fixture(t)
 	r := signRequest(a, payload())

@@ -2,7 +2,7 @@
 
 `channels/wecomapp` 的平台名为 wecom_app；配置 AccountID、CorpID、CorpSecret、AgentID、Token、EncodingAESKey。它不是 wecom 智能机器人，也不是单向群机器人 Webhook。一个 Adapter 对应一个确定的企业应用，不在验证失败时猜测另一个应用。
 
-宿主把 Handler(gateway.Bind(adapter.Account())) 挂载到受 HTTPS 保护的地址；Run 仅等待生命周期取消。支持 GET 加密 echostr 验证、POST 加密 XML、SHA1 签名、5 分钟时间窗、AES-256-CBC/32 字节 PKCS#7、CorpID 尾部校验与解密后 AgentID/ToUserName 检查。XML 限制体积/深度并拒绝 DTD 指令，不解析外部实体。
+宿主把 Handler(gateway.Bind(adapter.Account())) 挂载到受 HTTPS 保护的地址；Run 仅等待生命周期取消。支持 GET 加密 echostr 验证、POST 加密 XML、SHA1 签名、5 分钟时间窗、AES-256-CBC/32 字节 PKCS#7、CorpID 尾部校验与解密后 AgentID/ToUserName 检查。内外 XML 均要求单个 `xml` 根元素，限制体积/深度，拒绝根元素外的正文、额外根元素与 DTD 指令，不解析外部实体。媒体回调必须包含 MediaId。
 
 仅在 Sink 完成或持久接受后返回 success，失败返回 503。未知消息类型认证后忽略；事件不会擅自转换成控制指令。
 
@@ -16,4 +16,4 @@
 - Hermes 自建应用适配器：https://github.com/NousResearch/hermes-agent/blob/main/plugins/platforms/wecom/callback_adapter.py
 - wechatpy 自建应用消息接口文档：https://docs.wechatpy.org/zh-cn/latest/work/client.html （仅对照字段/限制，不将版本年龄作为兼容证明）
 
-9 项加解密/验签/身份/回执/出站 mock 测试已在隔离工作区通过；未完成真实账号和完整 Go1.25 仓库验收。
+12 项加解密/验签/身份/回执/出站 mock 测试已在实际仓库 Go 1.26.4/Windows 上通过 `go test -race ./channels/wecomapp`，包含 XML 文档完整性、媒体标识和收件人边界回归；未完成真实企业账号验收。
