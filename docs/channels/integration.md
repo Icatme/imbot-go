@@ -18,7 +18,7 @@ JZBeacon outbox / 目标授权 / 消息状态
 
 ## 入站事务
 
-Sink 的 nil 意味着消息已完成处理或已经可靠存入 inbox，不是“启动了一个 goroutine”。建议数据库唯一键至少包含 platform、account_id、tenant_id、chat_id、event_id；并保存原 MessageID 和完整 Route。重复键可直接视为已接受，数据库故障返回错误让适配器给出失败回执。QQ 要返回协议 d=1，不能统一成“HTTP200就成功”。
+Sink 的 nil 意味着消息已完成处理或已经可靠存入 inbox，不是“启动了一个 goroutine”。建议数据库唯一键至少包含 platform、account_id、tenant_id、kind、chat_id、thread_id、event_id；并保存原 MessageID 和完整 Route。重复键可直接视为已接受，数据库故障返回错误让适配器给出失败回执。QQ 要返回协议 d=1，不能统一成“HTTP200就成功”。
 
 Gateway 内存 TTL 去重只优化单进程重复请求，不承担崩溃恢复。原微信 SDK 还有自身 cursor/replay：只在应用持久接受之后才让 Ack 推进。
 
@@ -30,7 +30,7 @@ Authorize 是通道入站准入，不等于允许访问所有 CRM 数据。每�
 
 ## 会话与多任务
 
-SessionKey 使用 platform/account/tenant/chat/thread，不仅是 user_id。Gateway 仅保证同键接入回调串行；落库后的 Agent 执行顺序、并行子任务、Steer、cancel、长任务续接由 JZBeacon/pi-go 决定，不能因为更换聊天渠道就复制一套 Agent Runtime。
+SessionKey 使用 platform/account/tenant/kind/chat/thread，不仅是 user_id。Gateway 仅保证同键接入回调串行；落库后的 Agent 执行顺序、并行子任务、Steer、cancel、长任务续接由 JZBeacon/pi-go 决定，不能因为更换聊天渠道就复制一套 Agent Runtime。
 
 长连接必须有单 owner。跨副本部署用数据库/分布式租约约束同一 BotID 的活跃实例，出站 RPC 路由到 owner。尤其企微 reply req_id 属于当前连接，不能由另一实例拿一个字符串直接发送。
 

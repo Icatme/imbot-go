@@ -21,7 +21,7 @@
 
 ## 身份与安全
 
-Account = platform + configured account_id；SessionKey = platform + account_id + tenant_id + chat_id + thread_id，使用 JSON 数组编码，避免分隔符碰撞。不同平台或租户相同 user_id 不是同一人，不能自动合并 CRM 身份。
+Account = platform + configured account_id；SessionKey = platform + account_id + tenant_id + kind + chat_id + thread_id，使用 JSON 数组编码，避免分隔符碰撞。接入去重与回复上下文都使用完整 Route，避免不同线程或会话类型碰撞。不同平台或租户相同 user_id 不是同一人，不能自动合并 CRM 身份。
 
 Gateway 默认拒绝所有访问，生产必须配置 Authorize。允许的机器人来源也不等于允许其用户操作 CRM：通道鉴权、用户授权、业务工具权限分别校验。Bind(account) 拒绝适配器跨账号注入；平台账号由本地配置确定，不信任 payload 声称的账号。
 

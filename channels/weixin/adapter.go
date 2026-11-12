@@ -88,16 +88,28 @@ func (a *Adapter) normalize(m *wechatbot.IncomingMessage) (gateway.Event, error)
 		return gateway.Event{}, gateway.ErrInvalidEvent
 	}
 	id := string(m.Raw.MessageID)
+	if id == "0" {
+		id = ""
+	}
 	if id == "" {
 		for _, item := range m.Raw.ItemList {
-			if item.MsgID != "" {
+			if item.MsgID != "" && item.MsgID != "0" {
 				id = string(item.MsgID)
 				break
 			}
 		}
 	}
+	if id == "" && m.Raw.ClientID != "" {
+		id = "client:" + m.Raw.ClientID
+	}
+	if id == "" && m.Raw.Seq != 0 {
+		id = "seq:" + strconv.FormatInt(m.Raw.Seq, 10)
+	}
 	if id == "" {
-		raw, err := json.Marshal(m.Raw)
+		// A renewed reply credential must not turn redelivery into a new event.
+		identity := *m.Raw
+		identity.ContextToken = ""
+		raw, err := json.Marshal(identity)
 		if err != nil {
 			return gateway.Event{}, err
 		}

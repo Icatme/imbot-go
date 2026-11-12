@@ -1,33 +1,31 @@
 # 本轮验证记录与合并门槛
 
-## 已执行
+## 2026-11-12 审核修复验证
 
-隔离标准库工作区使用环境自带 Go1.23.2，测试本轮新写的标准库包，没有修改真实仓库 go.mod/go.sum：
+在真实仓库使用 Windows / Go 1.26.4，保留 go.mod 的 Go 1.25.0 声明和全部原 SDK 依赖。原始提交的隔离 Go 1.23 测试及 [skip ci] 不作为此次合并证据。
 
-```bash
-go test -race ./gateway ./channels/internal/wire ./channels/feishu \
-  ./channels/dingtalk ./channels/wecom ./channels/wecomapp ./channels/qqbot \
-  ./examples/multi-channel
-go vet ./gateway ./channels/internal/wire ./channels/feishu \
-  ./channels/dingtalk ./channels/wecom ./channels/wecomapp ./channels/qqbot \
-  ./examples/multi-channel
-```
+完成新增源码 gofmt，以及全仓 `go test ./...`、`go test -race ./...`、`go vet ./...`、`go build ./...`、`go mod verify` 和 `git diff --check`。包含原 SDK 登录/reauth、cursor/replay、引用媒体缓存，以及 channels/weixin 回归。
 
-72 项顶层测试通过：Gateway 10、wire 11、飞书 9（包含最终回复路由加固）、钉钉 8、企微 WS 11、企微应用 9、QQ 11、示例授权策略 3。包含真实本地 HTTP Upgrade/WS 收发与并发回执测试、固定协议数据、畸形帧、签名/加解密、授权/去重/隔离、失败回执和主动发送 mock。
+本轮审核修复：
 
-## 未执行，不能算通过
+- 完整 Route 键包含会话类型和线程；接入去重与回复上下文一致隔离。
+- WebSocket 控制帧不消耗数据分片/消息容量，关闭帧应答与代码验证完整，部分写入/解析失败后关闭连接。
+- 飞书 discovery 明确区分临时服务错误与认证错误；增加本地真实 WS 升级、protobuf 分片、成功/失败 ACK 和取消退出测试。完整回复路由绑定随飞书层交付。
+- 钉钉采用官方 sessionWebhook 路径，不虚构缺失的有效期，不把缺失 errcode 当发送成功。
+- 企微智能机器人拒绝跨租户/不支持会话发送，取消且未发出的请求不会关闭连接或误报不确定。
+- 企微应用严格限定单个 XML 根文档，校验媒体引用与广播收件人。
+- 微信桥忽略无效的零消息 ID，凭据刷新不改变缺少平台 ID 时的重投身份。
 
-当前环境没有 Go1.25 工具链和完整原 SDK 依赖，不能执行真实仓库 `go test ./...`、原 iLink 回归或 `channels/weixin` 的 8 项新增测试，也没有 Windows/macOS 完整编译验证。桥接接口逐项对照原源码并有静态接口断言，但不等于完成编译/运行验证。
+各层 PR 更新后的 GitHub Actions 检查负责 Ubuntu、Windows、macOS 验证；检查结果以各 PR 对应最终提交为准。按 #11 → #12 → #13 → #14 → #15 → #16 → #17 → #18 顺序逐一合并，使用提交匹配校验防止未审核内容混入。
 
-没有使用任何真实飞书、钉钉、企业微信、QQ 机器人账号，也未执行生产部署、实际主动消息发送或权限变更。不要把 mock 通过写成平台认证或生产可用承诺。
+## 尚未执行的真实平台验收
 
-## Codex / 审核环境合并前检查
+未使用真实飞书、钉钉、企业微信、QQ 或微信账号执行在线联调，也未执行生产部署、实际主动发送或权限变更。本地 fixture/mock 与本地真实 WebSocket 测试不能证明平台账号权限、配额或生产可用性。
 
-1. 按 #11 → #12 → #13 → #14 → #15 → #16 → #17 → 最后一组 PR 顺序审核；保留 stacked bases，必要时 retarget/rebase。
-2. 完整 checkout 最后一分支，用 Go1.25+ 对新增 Go 文件执行 gofmt，再跑 `go vet ./...`、`go test ./...`、`go test -race ./...`。上传稿有部分紧凑格式，不能把隔离工作区的 gofmt 当作远端全树已格式化。
-3. 原 SDK 的登录/reauth、cursor/replay、并发 Handler、引用缓存、媒体与大消息 ID 回归必须保留；确认根包旧文件与 go.mod/go.sum 没有被意外替换。
-4. 各平台真实账号验收：正常文本、群/私聊权限、错账号/错租户拒绝、重复回调、Sink 故障、断线重连、取消退出、发送超时/负回执、平台限流。
-5. 飞书验证真实 protobuf 分包/ACK 与 webhook；钉钉验证 SYSTEM data/ACK、sessionWebhook 期限；企微验证接管事件、stream 收尾与 req_id 回执；QQ 验证当前控制台回调/令牌域名及被动回复窗口。
-6. 上线前接入真正的持久 inbox/outbox、Bot 单 owner 约束与监控，示例探针不能替代生产业务接入。
+上线前还需要：
 
-本轮所有 PR 保持 Draft，提交带 [skip ci]；未自动合并、发布或部署。CI 跳过不代表检查通过。
+1. 各平台正常文本、群/私聊权限、错账号/租户拒绝、重复回调、Sink 故障、断线重连、取消退出、发送超时/负回执与限流验收。
+2. 飞书真实 protobuf 分包/ACK 与 Webhook；钉钉 SYSTEM ACK 与 sessionWebhook 期限；企微接管事件、stream 收尾与 req_id 回执；QQ 当前控制台回调、令牌域名及被动回复窗口。
+3. 接入持久 inbox/outbox、Bot 单 owner 约束与监控。示例仅为显式 opt-in 元数据探针，不能替代生产接入。
+
+前端 UI 验收由用户人工完成，本轮没有使用 computer use。

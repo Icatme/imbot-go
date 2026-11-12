@@ -1,6 +1,6 @@
 # 国内多通道 Gateway
 
-这是一组面向评审的增量实现，不替换根包微信 SDK，不修改 module path、go.mod/go.sum、现有登录/游标/重放/媒体 API，也不引入平台 SDK 或 Agent Runtime。
+这是一组可选的多通道接入实现，不替换根包微信 SDK，不修改 module path、go.mod/go.sum、现有登录/游标/重放/媒体 API，也不引入平台 SDK 或 Agent Runtime。
 
 ## 阅读入口
 
@@ -22,9 +22,9 @@
 | 5 | feat/domestic-gateway-05-wecom / #15 | 企微智能机器人与流式回复 |
 | 6 | feat/domestic-gateway-06-wecomapp / #16 | 企微自建应用回调 |
 | 7 | feat/domestic-gateway-07-qqbot / #17 | QQ API v2 |
-| 8 | feat/domestic-gateway-08-integration / 本 PR | iLink 兼容桥、示例、跨层文档与最终路由加固 |
+| 8 | feat/domestic-gateway-08-integration / #18 | iLink 兼容桥、示例、跨层文档与验证记录 |
 
-采用 stacked PR：后一个 base 是前一个 feature 分支。不要在第一组合并后就删除所有前序分支；合并前检查后续 base，按次序 retarget/rebase 到 main，确认 diff 没有重复或遗漏。当前全部保留 Draft，未自动合并或发布。
+提交时采用 stacked PR：后一个 base 是前一个 feature 分支。审核按表中顺序将前序修复带入后续分支，再逐一 retarget 到 main、运行检查并合并。验证边界见 [验收记录](verification.md)，真实平台账号验收和发布仍是独立步骤。
 
 ## 本地连接探针
 
@@ -36,7 +36,8 @@ export FEISHU_APP_SECRET='your-app-secret'
 export FEISHU_ACCOUNT_ID='support-bot'
 export CHANNEL_ALLOW_JSON='[{"platform":"feishu","account":"support-bot","tenant":"your-tenant-key","user":"your-open-id"}]'
 export CHANNEL_DEMO_ACK=1
-go run ./examples/multi-channel
+go build -o multi-channel ./examples/multi-channel
+./multi-channel
 ```
 
 **仅用于测试机器人。探针只打印消息元数据并 ACK，不存储消息、不调用 Agent、不回复。** 因而要求显式 CHANNEL_DEMO_ACK=1。生产必须替换 Handler 为可幂等持久接入的 inbox。不要把探针接到客户生产消息。

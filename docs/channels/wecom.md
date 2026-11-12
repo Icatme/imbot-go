@@ -16,10 +16,12 @@
 
 回复上下文按完整 Route+MessageID 缓存，并绑定当前连接实例；重连后旧上下文返回 ErrReplyExpired。收到 disconnected_event 表示另一实例接管，停止抢连并返回终止错误。不要让同一个 BotID 在多副本同时建立连接。
 
+主动发送与流式回复都要求 Route.TenantID 与配置一致，仅接受 direct/group 路由。已经取消、尚未发送的请求返回上下文错误，不标记为发送结果不确定，也不关闭仍可用的连接。
+
 ## 安全与范围
 
 媒体 URL/密钥只保留在 Event.Native（json:"-"），默认不入日志或 JSON 持久化；需要媒体处理的应用应在受控路径下载或加密保存，不能默认抓取任意 URL。Native 不适合直接打印。
 
 未实现分片媒体上传、加密文件下载、流式图文附加、欢迎语、卡片交互回调/审批/更新。Card 仅接受平台原生 JSON，不提供高级卡片模型。参照官方 WecomTeam/aibot-node-sdk 的 src/ws.ts、src/client.ts、src/types/api.ts 与 message.ts，读取日期 2026-11-12；没有引用其代码或依赖。
 
-11 项测试覆盖回执关联、串行、超时、负回执、旧连接隔离、流式快照、秘密序列化以及真实本地 WebSocket 握手/回调中等待发送回执。仍未做真实企业微信账号验收。
+13 项测试覆盖回执关联、串行、超时、负回执、旧连接隔离、流式快照、秘密序列化、出站租户隔离、取消请求以及真实本地 WebSocket 握手/回调中等待发送回执；已在实际仓库 Go 1.26.4/Windows 上通过 `go test -race ./channels/wecom`。仍未做真实企业微信账号验收。
