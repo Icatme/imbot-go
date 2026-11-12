@@ -18,12 +18,19 @@ go get github.com/Icatme/wechatbot-go
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 开发分支：消息内容与媒体传输
+## 最近版本（v0.8.5）：消息与媒体协议修复
 
-开发分支补齐常用富文本、显式附件上传下载、引用与卡片事件，以及可追踪部分成功的长文本/批量发送。
-这些改动尚未包含在 v0.8.0 标签中，接口与限制见[消息与媒体契约](docs/channels/media.md)。
+- 完善多通道富文本、附件上传下载、引用与卡片事件处理，保留消息顺序和长文本/批量发送的部分成功结果。
+- 修复媒体资源跨路由复用、过期校验及微信跨 Bot 会话复用；发送 hook 不再污染原消息或缓存资源。
+- 修复迟到鉴权错误清除新 token、客户端超时原因丢失、上传成功结果被取消覆盖，以及飞书和 QQ 的发送协议问题。
 
-## 最近版本（v0.8.0）：多通道 Gateway 与扫码注册
+仍要求 Go 1.25+，module path 和第三方依赖不变。钉钉出站媒体、自动转码、持久 inbox/outbox 与跨副本账号租约不在当前支持范围；真实账号与 UI 验收由使用者完成。
+
+接口与限制见[消息与媒体契约](docs/channels/media.md)、[能力矩阵](docs/channels/capabilities.md)和[多通道接入](docs/channels/README.md)。完整版本说明见 [v0.8.5 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.5)。
+
+## 历史版本
+
+### v0.8.0：多通道 Gateway 与扫码注册
 
 - 新增 `gateway`：统一账号、租户、会话和线程路由，提供显式授权、接入去重、按会话串行接入和能力查询。
 - 新增飞书/Lark、钉钉、企业微信智能机器人、企业微信自建应用、QQ 适配器，以及复用根包的微信 iLink 桥接。
@@ -32,12 +39,10 @@ go get github.com/Icatme/wechatbot-go
 
 原微信根包 API 和 module path 保持不变；新增通道按需导入，要求仍为 Go 1.25+，未增加第三方依赖。
 企微自建应用使用已有凭据；QQ 扫码取得凭据后仍需配置 HTTPS 消息回调。
-v0.8.0 的统一层尚不提供媒体上传下载、持久 inbox/outbox 或跨副本账号租约；开发分支的媒体扩展见上节，真实平台账号与 UI 验收仍需使用者完成。
+v0.8.0 的统一层尚不提供媒体上传下载、持久 inbox/outbox 或跨副本账号租约；当前版本的媒体支持见上节，真实平台账号与 UI 验收仍需使用者完成。
 
 接入说明见[多通道 Gateway](docs/channels/README.md)、[扫码接入](docs/channels/onboarding.md)和[能力矩阵](docs/channels/capabilities.md)。
 完整版本说明见 [v0.8.0 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.0)。
-
-## 历史版本
 
 ### v0.7.0：引用附件恢复
 

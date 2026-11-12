@@ -10,7 +10,7 @@
 | 钉钉 Python | stream.py blob 065eb32d916ba342a715eb920251734d8045adc6；frames.py blob 20c28ea8f3175dd9f2552f41b6d9eec28df9c8ec | endpoint/订阅、JSON 字符串 data、ACK |
 | 企业微信官方 Node | WecomTeam/aibot-node-sdk/src/ws.ts blob 1e24e29420154b1e460dfa31e65fb8033e5d31e9 | req_id 队列、回执、接管断连 |
 | 企业微信官方 Node | src/types/api.ts blob 8c292a9b772fbe0278ec7d41eb26f96240287966；message.ts blob dffcde3abad8562f855244fadb7c06962e4d9cf4 | 完整快照 stream、消息结构与秘密字段 |
-| 企业微信官方 Node | src/client.ts blob c3eaa945079f5f6145fc2684f55a5906530fe92f | 主动发送与三阶段媒体上传对照；初版 Gateway 未实现媒体上传，后续开发分支已补齐 |
+| 企业微信官方 Node | src/client.ts blob c3eaa945079f5f6145fc2684f55a5906530fe92f | 主动发送与三阶段媒体上传对照；初版 Gateway 未实现媒体上传，v0.8.5 已补齐 |
 | Hermes Python | plugins/platforms/wecom/wecom_crypto.py blob 5e09fa419f08f1f3ad5cd69ab51945970b92e908 | 企业应用 AES-CBC wire 兼容核对 |
 | BotGo | interaction/webhook/webhook.go blob 7b94344942700871532450b3cb0a61203e818e07 | challenge 与 op=12,d=0/1 回执 |
 | BotGo | interaction/signature/interaction_test.go blob 8a8f234b774cf4e38367fb511f976b25585e0968 | 固定字节签名 fixture |

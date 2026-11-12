@@ -50,7 +50,7 @@ Authorization: Bearer <bot_token>
 X-WECHAT-UIN: <base64(String(randomUint32))>
 ```
 
-All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.8.0`.
+All POST bodies include: `base_info: { channel_version: "<module_version>", bot_agent?: "<agent>" }`. Development builds fall back to `0.8.5`.
 
 ## Get Updates (Long Poll)
 
