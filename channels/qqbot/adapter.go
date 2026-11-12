@@ -145,7 +145,7 @@ func (a *Adapter) Handler(sink gateway.Sink) http.Handler {
 			reportedUnsupported := errors.As(err, &unsupported)
 			if reportedUnsupported {
 				wire.ReportUnsupported(err, a.cfg.OnError)
-			} else if err != nil && a.cfg.OnError != nil {
+			} else if !gateway.Consumed(err) && a.cfg.OnError != nil {
 				a.cfg.OnError(err)
 			}
 			if !gateway.Consumed(err) && !reportedUnsupported {

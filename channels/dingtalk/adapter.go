@@ -13,6 +13,7 @@ import (
 
 	"github.com/Icatme/imbot-go/channels/internal/wire"
 	"github.com/Icatme/imbot-go/gateway"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 const topic = "/v1.0/im/bot/messages/get"
@@ -179,6 +180,9 @@ func (a *Adapter) Decode(data []byte, eventID string) (gateway.Event, error) {
 			ref = content.PictureCode
 		}
 		e.Text = content.Recognition
+		if v.Type == "audio" {
+			e.ContentKinds = []receive.Kind{receive.Voice}
+		}
 		if ref == "" {
 			if v.Type == "audio" && e.Text != "" {
 				break

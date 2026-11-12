@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/Icatme/imbot-go/receive"
 )
 
 type Options struct {
@@ -13,6 +15,13 @@ type Options struct {
 	Authorize                      Authorizer
 	MaxConcurrent, MaxDedupEntries int
 	DedupTTL                       time.Duration
+	// ReceivePolicy defaults to accepting all supported content. Account entries
+	// replace this default in full; a zero entry explicitly allows all content.
+	ReceivePolicy          receive.Policy
+	AccountReceivePolicies map[Account]receive.Policy
+	// OnReceiveRejected observes deliberate drops after authorization. It may
+	// send an application-specific notice; it must honor ctx and return promptly.
+	OnReceiveRejected func(context.Context, Event, *receive.Rejection)
 }
 type admission struct {
 	done    chan struct{}
@@ -42,6 +51,21 @@ func New(o Options) (*Gateway, error) {
 	if o.Handler == nil {
 		return nil, errors.New("gateway: Handler is required")
 	}
+	if err := o.ReceivePolicy.Validate(); err != nil {
+		return nil, err
+	}
+	o.ReceivePolicy = o.ReceivePolicy.Clone()
+	policies := make(map[Account]receive.Policy, len(o.AccountReceivePolicies))
+	for account, policy := range o.AccountReceivePolicies {
+		if err := account.Validate(); err != nil {
+			return nil, err
+		}
+		if err := policy.Validate(); err != nil {
+			return nil, err
+		}
+		policies[account] = policy.Clone()
+	}
+	o.AccountReceivePolicies = policies
 	if o.MaxConcurrent <= 0 {
 		o.MaxConcurrent = 32
 	}
@@ -145,7 +169,7 @@ func (g *Gateway) Accept(ctx context.Context, e Event) (err error) {
 		a.pending = false
 		a.err = err
 		a.expires = time.Now().Add(g.opts.DedupTTL)
-		if err != nil {
+		if err != nil && !errors.Is(err, receive.ErrRejected) {
 			delete(g.seen, k)
 		}
 		close(a.done)
@@ -181,6 +205,13 @@ func (g *Gateway) Accept(ctx context.Context, e Event) (err error) {
 		defer func() { <-g.slots }()
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+	if err := g.receivePolicy(e.Route.Account).Check(receiveContent(e)); err != nil {
+		var rejected *receive.Rejection
+		if errors.As(err, &rejected) && g.opts.OnReceiveRejected != nil {
+			g.opts.OnReceiveRejected(ctx, e, rejected)
+		}
+		return err
 	}
 	return g.opts.Handler(ctx, e)
 }

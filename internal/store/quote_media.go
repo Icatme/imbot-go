@@ -148,7 +148,7 @@ func (s *QuoteStore) PutMedia(key QuoteKey, media QuoteMedia, data []byte) (resu
 	}
 	record := quoteRecord{Key: key, SavedAt: s.now().UnixMilli(), Media: &media}
 	if old, ok := s.records[key]; ok && old.SavedAt >= s.now().Add(-s.retention).UnixMilli() {
-		record.Text, record.SavedAt = old.Text, old.SavedAt
+		record.Text, record.Kinds, record.SavedAt = old.Text, slices.Clone(old.Kinds), old.SavedAt
 		if data == nil && old.Media != nil {
 			// A metadata observation cannot replace the payload identified by key.
 			// In particular, a replay may omit the display name added by Download.

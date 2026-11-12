@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Icatme/imbot-go/gateway"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 func fixture(t *testing.T) *Adapter {
@@ -109,25 +110,23 @@ func TestOldTimestamp(t *testing.T) {
 }
 func TestAdmissionACK(t *testing.T) {
 	a := fixture(t)
-	for _, fail := range []bool{false, true} {
+	for _, tc := range []struct {
+		err          error
+		ack, reports int
+	}{{nil, 0, 0}, {errors.New("persist failed"), 1, 1}, {&receive.Rejection{Kind: receive.Voice}, 0, 0}} {
+		reports := 0
+		a.cfg.OnError = func(error) { reports++ }
 		w := httptest.NewRecorder()
 		a.Handler(func(_ context.Context, e gateway.Event) error {
 			if e.Route.TenantID != "app" || e.Route.ChatID != "user" {
 				t.Error(e)
 			}
-			if fail {
-				return errors.New("persist failed")
-			}
-			return nil
+			return tc.err
 		}).ServeHTTP(w, signRequest(a, payload()))
 		var v map[string]int
 		_ = json.Unmarshal(w.Body.Bytes(), &v)
-		want := 0
-		if fail {
-			want = 1
-		}
-		if w.Code != 200 || v["op"] != 12 || v["d"] != want {
-			t.Fatal(w.Code, v)
+		if w.Code != 200 || v["op"] != 12 || v["d"] != tc.ack || reports != tc.reports {
+			t.Fatal(w.Code, v, reports)
 		}
 	}
 }

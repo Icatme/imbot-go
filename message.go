@@ -78,6 +78,7 @@ func (b *Bot) parseMessage(wire *WireMessage) *IncomingMessage {
 				q.PartialText = &partial
 			}
 			if item.RefMsg.MessageItem != nil {
+				q.ContentKinds = messageContentKinds([]MessageItem{*item.RefMsg.MessageItem})
 				q.Type = detectType([]MessageItem{*item.RefMsg.MessageItem})
 				q.Text = quoteText([]MessageItem{*item.RefMsg.MessageItem})
 				q.Media = quotedMediaFromItem(item.RefMsg.MessageItem)

@@ -33,6 +33,9 @@ type handlerSession struct {
 }
 
 func (b *Bot) beginRun(ctx context.Context) (authenticatedSession, MessageHandler, context.Context, context.CancelFunc, error) {
+	if err := b.opts.ReceivePolicy.Validate(); err != nil {
+		return authenticatedSession{}, nil, nil, nil, err
+	}
 	b.mu.Lock()
 	if b.running {
 		b.mu.Unlock()
@@ -280,6 +283,9 @@ func (b *Bot) decodeWireMessage(rawMsg json.RawMessage) (*WireMessage, error) {
 }
 
 func (b *Bot) processWireMessage(ctx context.Context, handler MessageHandler, sessionGeneration uint64, wire *WireMessage) error {
+	if err := b.opts.ReceivePolicy.Validate(); err != nil {
+		return err
+	}
 	if err := b.validateDeliverySession(sessionGeneration); err != nil {
 		return err
 	}
@@ -297,14 +303,10 @@ func (b *Bot) processWireMessage(ctx context.Context, handler MessageHandler, se
 	incoming := b.parseMessage(wire)
 	if incoming != nil {
 		b.resolveQuote(sessionGeneration, wire, incoming)
-		b.cacheInboundQuote(sessionGeneration, wire)
 		incoming.sessionGeneration = sessionGeneration
 		incoming.sessionBot = b
-		if err := b.hooks.AfterReceive.Run(incoming); err != nil {
-			return fmt.Errorf("AfterReceive hook failed: %w", err)
-		}
 		handlerCtx := context.WithValue(ctx, handlerSessionKey{}, handlerSession{bot: b, generation: sessionGeneration})
-		result := b.invokeHandler(handlerCtx, handler, incoming)
+		result := b.receiveMessage(handlerCtx, handler, incoming)
 		if err := validateMessageResult(result); err != nil {
 			return fmt.Errorf("handle message: %w", err)
 		}

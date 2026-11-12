@@ -10,6 +10,7 @@ import (
 	"github.com/Icatme/imbot-go/internal/protocol"
 	"github.com/Icatme/imbot-go/internal/store"
 	botlog "github.com/Icatme/imbot-go/log"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 // Options configures a Bot instance.
@@ -35,6 +36,11 @@ type Options struct {
 	// when a submitted code was rejected. The callback must honor ctx cancellation.
 	OnVerifyCode func(ctx context.Context, isRetry bool) (string, error)
 	OnError      func(err error)
+	// ReceivePolicy's zero value accepts all supported inbound content.
+	ReceivePolicy receive.Policy
+	// OnReceiveRejected observes a deliberate drop before AfterReceive or the
+	// handler. It can reply using msg; it must honor ctx and return promptly.
+	OnReceiveRejected func(context.Context, *IncomingMessage, *receive.Rejection)
 }
 
 // Bot is the main WeChat bot client.
@@ -79,6 +85,7 @@ func New(opts ...Options) *Bot {
 	if len(opts) > 0 {
 		o = opts[0]
 	}
+	o.ReceivePolicy = o.ReceivePolicy.Clone()
 	if o.BaseURL == "" {
 		o.BaseURL = protocol.DefaultBaseURL
 	}

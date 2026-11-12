@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Icatme/imbot-go/internal/store"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 // QuoteCacheOptions controls local reference history. The zero value enables
@@ -49,7 +50,9 @@ func (b *Bot) quoteAccount(generation uint64) string {
 
 func (b *Bot) cacheInboundQuote(generation uint64, wire *WireMessage) {
 	id := wireQuoteID(wire)
-	b.cacheQuote(b.quoteAccount(generation), peerUserID(wire), id, quoteText(wire.ItemList))
+	if !b.cacheQuote(b.quoteAccount(generation), peerUserID(wire), id, quoteText(wire.ItemList), messageContentKinds(wire.ItemList)) {
+		return
+	}
 	for _, item := range wire.ItemList {
 		if media := quotedMediaFromItem(&item); media != nil {
 			b.cacheQuoteMedia(b.quoteAccount(generation), peerUserID(wire), id, media, nil)
@@ -58,20 +61,28 @@ func (b *Bot) cacheInboundQuote(generation uint64, wire *WireMessage) {
 	}
 }
 
-func (b *Bot) cacheQuote(account, peer string, id MessageID, text string) {
+// A failed index update is reported once. Callers must not attempt a related
+// media write against that same failed update.
+func (b *Bot) cacheQuote(account, peer string, id MessageID, text string, kinds []receive.Kind) bool {
 	id = normalizeQuoteID(id)
-	if b.quoteStore == nil || account == "" || peer == "" || id == "" || text == "" {
-		return
+	if b.quoteStore == nil || account == "" || peer == "" || id == "" || (text == "" && (len(kinds) == 0 || (len(kinds) == 1 && kinds[0] == receive.Text))) {
+		return true
 	}
 	// Validate before lazy IO too, so direct SDK sends cannot overwrite another
 	// state file when a caller accidentally configures colliding paths.
 	if err := b.validateCurrentStatePaths(); err != nil {
 		b.reportError(&QuoteCacheError{Cause: err})
-		return
+		return false
 	}
-	if err := b.quoteStore.Put(store.QuoteKey{Account: account, Peer: peer, Message: string(id)}, text); err != nil {
+	content := store.QuoteText{Text: text}
+	for _, kind := range kinds {
+		content.Kinds = append(content.Kinds, string(kind))
+	}
+	if err := b.quoteStore.Put(store.QuoteKey{Account: account, Peer: peer, Message: string(id)}, content); err != nil {
 		b.reportError(&QuoteCacheError{Cause: err})
+		return false
 	}
+	return true
 }
 
 func (b *Bot) resolveQuote(generation uint64, wire *WireMessage, incoming *IncomingMessage) {
@@ -86,7 +97,7 @@ func (b *Bot) resolveQuote(generation uint64, wire *WireMessage, incoming *Incom
 			q.Resolution = QuoteUnavailable
 			b.reportError(&QuoteCacheError{Cause: err})
 		} else {
-			text, ok, err := b.quoteStore.Get(store.QuoteKey{
+			content, ok, err := b.quoteStore.Get(store.QuoteKey{
 				Account: b.quoteAccount(generation), Peer: peerUserID(wire), Message: string(q.MessageID),
 			})
 			if err != nil {
@@ -94,7 +105,16 @@ func (b *Bot) resolveQuote(generation uint64, wire *WireMessage, incoming *Incom
 				b.reportError(&QuoteCacheError{Cause: err})
 				return
 			} else if ok {
-				q.Text, q.Type, q.Resolution = text, ContentText, QuoteCached
+				q.Text, q.Type, q.Resolution = content.Text, ContentText, QuoteCached
+				q.ContentKinds = nil
+				for _, kind := range content.Kinds {
+					q.ContentKinds = append(q.ContentKinds, receive.Kind(kind))
+				}
+				// Old cache entries lack text provenance. Keep their visible text
+				// classified as Text rather than hiding it behind a media type.
+				if len(q.ContentKinds) == 0 && q.Text != "" {
+					q.ContentKinds = []receive.Kind{receive.Text}
+				}
 			}
 			media, found, mediaErr := b.quoteStore.GetMedia(store.QuoteKey{
 				Account: b.quoteAccount(generation), Peer: peerUserID(wire), Message: string(q.MessageID),
@@ -104,6 +124,7 @@ func (b *Bot) resolveQuote(generation uint64, wire *WireMessage, incoming *Incom
 				b.reportError(&QuoteCacheError{Cause: mediaErr})
 			} else if found {
 				q.Type, q.Resolution = ContentType(media.Type), QuoteCached
+				q.ContentKinds = append(q.ContentKinds, receive.Kind(media.Type))
 				q.Media = &QuotedMedia{Type: q.Type, FileName: media.FileName, MIMEType: media.MIMEType,
 					Size: media.Size, Format: media.Format, Cached: media.File != ""}
 			}

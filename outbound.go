@@ -236,9 +236,9 @@ func (b *Bot) sendMessage(ctx context.Context, sessionGeneration uint64, userID,
 		// Cache exactly the post-hook, normalized text that was accepted. Cache
 		// failures are reported separately: returning a send error here could
 		// cause a caller to deliver the already accepted message again.
-		b.cacheQuote(creds.AccountID, request.UserID, receipt.MessageID, quoteText([]MessageItem{request.Message.Item}))
+		cacheReady := b.cacheQuote(creds.AccountID, request.UserID, receipt.MessageID, quoteText([]MessageItem{request.Message.Item}), messageContentKinds([]MessageItem{request.Message.Item}))
 		acceptedMedia := quotedMediaFromItem(&request.Message.Item)
-		if acceptedMedia != nil {
+		if acceptedMedia != nil && cacheReady {
 			var retained []byte
 			if reflect.DeepEqual(originalMedia, acceptedMedia) {
 				retained = mediaData

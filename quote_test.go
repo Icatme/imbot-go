@@ -273,7 +273,7 @@ func TestQuoteCachePathCollisionProtectsOtherState(t *testing.T) {
 	bot.quoteStore = store.NewQuoteStore(bot.contextTokens.Path(), 0, 0)
 	var reported error
 	bot.opts.OnError = func(err error) { reported = err }
-	bot.cacheQuote("account", "peer", "123", "body")
+	bot.cacheQuote("account", "peer", "123", "body", nil)
 	if reported == nil || !strings.Contains(reported.Error(), "must be distinct") {
 		t.Fatalf("collision error=%v", reported)
 	}

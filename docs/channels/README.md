@@ -8,6 +8,7 @@
 - [参考库与协议来源](references.md)；[本轮核对补充](research-notes.md)
 - [能力矩阵与非目标](capabilities.md)
 - [消息内容、附件传输与部分成功](media.md)
+- [按 Bot 配置接收类型与文件白名单](receive-policy.md)
 - [钉钉 / 飞书 / 企微 / QQ 扫码接入](onboarding.md)
 - [JZBeacon / pi-go 集成边界](integration.md)
 - [验收与限制](verification.md)

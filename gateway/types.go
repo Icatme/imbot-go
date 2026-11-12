@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Icatme/imbot-go/receive"
 )
 
 // Account identifies one configured bot, not a credential or a human identity.
@@ -68,9 +70,10 @@ type ContentPart struct {
 
 // Quote keeps referenced content separate from the current message's attachments.
 type Quote struct {
-	MessageID   string       `json:"message_id,omitempty"`
-	Text        string       `json:"text,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"`
+	MessageID    string         `json:"message_id,omitempty"`
+	Text         string         `json:"text,omitempty"`
+	Attachments  []Attachment   `json:"attachments,omitempty"`
+	ContentKinds []receive.Kind `json:"content_kinds,omitempty"`
 }
 
 // Interaction is authenticated platform action data, not authorization to execute
@@ -101,6 +104,10 @@ type Event struct {
 	Parts       []ContentPart `json:"parts,omitempty"`
 	Quote       *Quote        `json:"quote,omitempty"`
 	Interaction *Interaction  `json:"interaction,omitempty"`
+	// ContentKinds preserves original kinds lost in text projection, especially
+	// voice transcripts without downloadable audio. Adapters must include every
+	// original kind when populating this field; audio is receive.Voice.
+	ContentKinds []receive.Kind `json:"content_kinds,omitempty"`
 }
 
 func (e Event) Reply(text string) Message { return Message{Text: text, ReplyTo: e.MessageID} }
@@ -166,7 +173,9 @@ var (
 )
 
 // Consumed distinguishes deliberate policy drops from retryable admission failures.
-func Consumed(err error) bool { return err == nil || errors.Is(err, ErrUnauthorized) }
+func Consumed(err error) bool {
+	return err == nil || errors.Is(err, ErrUnauthorized) || errors.Is(err, receive.ErrRejected)
+}
 
 // AllowAll must be selected explicitly. Production applications should supply
 // their own account/tenant/user authorization policy instead.

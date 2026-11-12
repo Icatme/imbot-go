@@ -8,6 +8,7 @@ import (
 
 	"github.com/Icatme/imbot-go/channels/internal/wire"
 	"github.com/Icatme/imbot-go/gateway"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 type content struct {
@@ -130,12 +131,18 @@ func (a *Adapter) decode(f frame, s *session) (gateway.Event, error) {
 		return gateway.Event{}, err
 	}
 	e.Text, e.Attachments, e.Parts = text, attachments, parts
+	if v.Type == "voice" {
+		e.ContentKinds = []receive.Kind{receive.Voice}
+	}
 	if v.Quote != nil {
 		text, attachments, _, err = a.parseContent(e.Route, v.ID, "quote", *v.Quote)
 		if err != nil {
 			return gateway.Event{}, err
 		}
 		e.Quote = &gateway.Quote{MessageID: v.Quote.ID, Text: text, Attachments: attachments}
+		if v.Quote.Type == "voice" {
+			e.Quote.ContentKinds = []receive.Kind{receive.Voice}
+		}
 		e.ReplyTo = v.Quote.ID
 	}
 	a.replies.Put(wire.ContextKey(e.Route, e.MessageID), replyContext{s, f.Headers["req_id"]}, time.Now().Add(5*time.Minute))

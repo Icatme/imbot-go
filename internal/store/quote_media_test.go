@@ -20,7 +20,7 @@ func TestQuoteMediaRestartIsolationAndOwnedNames(t *testing.T) {
 	if err := s.PutMedia(key, meta, []byte("document")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Put(key, "caption"); err != nil {
+	if err := s.Put(key, QuoteText{Text: "caption"}); err != nil {
 		t.Fatal(err)
 	}
 	other := NewQuoteStore(path, 0, 0)
@@ -28,7 +28,7 @@ func TestQuoteMediaRestartIsolationAndOwnedNames(t *testing.T) {
 	if err != nil || string(data) != "document" || got.FileName != meta.FileName || !validMediaFile(got.File) {
 		t.Fatalf("read=%q %+v %v", data, got, err)
 	}
-	if text, ok, err := other.Get(key); err != nil || !ok || text != "caption" {
+	if text, ok, err := other.Get(key); err != nil || !ok || text.Text != "caption" {
 		t.Fatalf("text=%q %v %v", text, ok, err)
 	}
 	for _, wrong := range []QuoteKey{{"other", "peer", "123"}, {"account", "other", "123"}} {

@@ -18,6 +18,8 @@ const (
 	DefaultQuoteMessages  = 10_000
 	// Bound snapshot writes and memory even when every message is large.
 	maxQuoteTextBytes = 64 * 1024
+	maxQuoteKinds     = 16
+	maxQuoteKindBytes = 32
 	maxQuoteBytes     = 16 * 1024 * 1024
 	maxQuoteFileBytes = 128 * 1024 * 1024 // includes JSON escaping and metadata
 )
@@ -29,9 +31,17 @@ type QuoteKey struct {
 	Message string `json:"message"`
 }
 
+// QuoteText preserves original content kinds alongside projected text. Kinds
+// may be present without text, for example for an image-only source message.
+type QuoteText struct {
+	Text  string
+	Kinds []string
+}
+
 type quoteRecord struct {
 	Key     QuoteKey    `json:"key"`
 	Text    string      `json:"text"`
+	Kinds   []string    `json:"kinds,omitempty"`
 	SavedAt int64       `json:"saved_at"`
 	Media   *QuoteMedia `json:"media,omitempty"`
 }
@@ -116,28 +126,31 @@ func (s *QuoteStore) readLocked() error {
 	return nil
 }
 
-func (s *QuoteStore) Get(key QuoteKey) (string, bool, error) {
+func (s *QuoteStore) Get(key QuoteKey) (QuoteText, bool, error) {
 	if !validQuoteKey(key) {
-		return "", false, nil
+		return QuoteText{}, false, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
-		return "", false, err
+		return QuoteText{}, false, err
 	}
 	record, ok := s.records[key]
 	if !ok || record.SavedAt < s.now().Add(-s.retention).UnixMilli() {
-		return "", false, nil
+		return QuoteText{}, false, nil
 	}
-	return record.Text, true, nil
+	return QuoteText{Text: record.Text, Kinds: slices.Clone(record.Kinds)}, true, nil
 }
 
-func (s *QuoteStore) Put(key QuoteKey, text string) error {
-	if !validQuoteKey(key) || strings.TrimSpace(text) == "" {
+func (s *QuoteStore) Put(key QuoteKey, text QuoteText) error {
+	if !validQuoteKey(key) || (strings.TrimSpace(text.Text) == "" && len(text.Kinds) == 0) {
 		return nil
 	}
-	if len(text) > maxQuoteTextBytes {
+	if len(text.Text) > maxQuoteTextBytes {
 		return fmt.Errorf("quote text exceeds 64 KiB limit")
+	}
+	if !validQuoteKinds(text.Kinds) {
+		return fmt.Errorf("invalid quote content kinds")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -145,13 +158,19 @@ func (s *QuoteStore) Put(key QuoteKey, text string) error {
 		return err
 	}
 	now := s.now().UnixMilli()
-	if old, ok := s.records[key]; ok && old.Text == text && old.SavedAt >= s.now().Add(-s.retention).UnixMilli() {
+	cutoff := s.now().Add(-s.retention).UnixMilli()
+	if old, ok := s.records[key]; ok && old.Text == text.Text && slices.Equal(old.Kinds, text.Kinds) && old.SavedAt >= cutoff {
 		return nil // a replay must not extend retention or cause another disk write
 	}
 	next := make([]quoteRecord, 0, len(s.records)+1)
-	record := quoteRecord{Key: key, Text: text, SavedAt: now}
-	if old, ok := s.records[key]; ok {
+	record := quoteRecord{Key: key, Text: text.Text, Kinds: slices.Clone(text.Kinds), SavedAt: now}
+	if old, ok := s.records[key]; ok && old.SavedAt >= cutoff {
 		record.Media = old.Media
+		if old.Text == text.Text {
+			// Enriching a replay with semantic metadata does not renew its text
+			// or media retention deadlines.
+			record.SavedAt = old.SavedAt
+		}
 	}
 	next = append(next, record)
 	for oldKey, record := range s.records {
@@ -160,6 +179,18 @@ func (s *QuoteStore) Put(key QuoteKey, text string) error {
 		}
 	}
 	return s.saveLocked(next)
+}
+
+func validQuoteKinds(kinds []string) bool {
+	if len(kinds) > maxQuoteKinds {
+		return false
+	}
+	for _, kind := range kinds {
+		if len(kind) == 0 || len(kind) > maxQuoteKindBytes {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *QuoteStore) saveLocked(next []quoteRecord) error {
@@ -178,7 +209,7 @@ func (s *QuoteStore) saveLocked(next []quoteRecord) error {
 func (s *QuoteStore) prune(records []quoteRecord) []quoteRecord {
 	cutoff := s.now().Add(-s.retention).UnixMilli()
 	records = slices.DeleteFunc(records, func(r quoteRecord) bool {
-		return !validQuoteKey(r.Key) || (r.Text == "" && r.Media == nil) || len(r.Text) > maxQuoteTextBytes || r.SavedAt < cutoff || !validQuoteMedia(r.Media)
+		return !validQuoteKey(r.Key) || (r.Text == "" && len(r.Kinds) == 0 && r.Media == nil) || len(r.Text) > maxQuoteTextBytes || !validQuoteKinds(r.Kinds) || r.SavedAt < cutoff || !validQuoteMedia(r.Media)
 	})
 	// Prefer the newly inserted record when multiple writes share a millisecond.
 	slices.SortStableFunc(records, func(a, b quoteRecord) int {
@@ -194,6 +225,9 @@ func (s *QuoteStore) prune(records []quoteRecord) []quoteRecord {
 	bytes := 0
 	records = slices.DeleteFunc(records, func(r quoteRecord) bool {
 		size := len(r.Text) + len(r.Key.Account) + len(r.Key.Peer) + len(r.Key.Message)
+		for _, kind := range r.Kinds {
+			size += len(kind)
+		}
 		if r.Media != nil {
 			size += len(r.Media.FileName) + len(r.Media.MIMEType) + 256
 		}

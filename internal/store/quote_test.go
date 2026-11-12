@@ -16,11 +16,11 @@ func TestQuoteStoreRestartAndIsolation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "quotes.json")
 	s := NewQuoteStore(path, 0, 0)
 	key := QuoteKey{"account-a", "peer-a", "18446744073709551615"}
-	if err := s.Put(key, " 原文\n"); err != nil {
+	if err := s.Put(key, QuoteText{Text: " 原文\n"}); err != nil {
 		t.Fatal(err)
 	}
 	restarted := NewQuoteStore(path, 0, 0)
-	if text, ok, err := restarted.Get(key); err != nil || !ok || text != " 原文\n" {
+	if text, ok, err := restarted.Get(key); err != nil || !ok || text.Text != " 原文\n" {
 		t.Fatalf("get=%q %v %v", text, ok, err)
 	}
 	for _, other := range []QuoteKey{{"account-b", key.Peer, key.Message}, {key.Account, "peer-b", key.Message}} {
@@ -35,11 +35,11 @@ func TestQuoteStoreRetentionCapacityAndReplay(t *testing.T) {
 	now := time.Unix(10000, 0)
 	s.now = func() time.Time { return now }
 	key := QuoteKey{"account", "peer", "1"}
-	if err := s.Put(key, "first"); err != nil {
+	if err := s.Put(key, QuoteText{Text: "first"}); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(30 * time.Minute)
-	if err := s.Put(key, "first"); err != nil {
+	if err := s.Put(key, QuoteText{Text: "first"}); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(31 * time.Minute)
@@ -48,7 +48,7 @@ func TestQuoteStoreRetentionCapacityAndReplay(t *testing.T) {
 	}
 	for i := 2; i <= 4; i++ {
 		now = now.Add(time.Second)
-		if err := s.Put(QuoteKey{key.Account, key.Peer, fmt.Sprint(i)}, fmt.Sprint(i)); err != nil {
+		if err := s.Put(QuoteKey{key.Account, key.Peer, fmt.Sprint(i)}, QuoteText{Text: fmt.Sprint(i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,7 +58,7 @@ func TestQuoteStoreRetentionCapacityAndReplay(t *testing.T) {
 	if _, ok, _ := s.Get(QuoteKey{key.Account, key.Peer, "2"}); ok {
 		t.Fatal("oldest record not evicted")
 	}
-	if err := s.Put(QuoteKey{"other", key.Peer, "5"}, "other account"); err != nil {
+	if err := s.Put(QuoteKey{"other", key.Peer, "5"}, QuoteText{Text: "other account"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.records) != 3 {
@@ -70,7 +70,7 @@ func TestQuoteStoreFailedWriteDoesNotPublish(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "quotes.json")
 	s := NewQuoteStore(path, 0, 0)
 	key := QuoteKey{"account", "peer", "1"}
-	if err := s.Put(key, "accepted"); err != nil {
+	if err := s.Put(key, QuoteText{Text: "accepted"}); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(path)
@@ -79,10 +79,10 @@ func TestQuoteStoreFailedWriteDoesNotPublish(t *testing.T) {
 	}
 	want := errors.New("disk unavailable")
 	s.write = func(string, any) error { return want }
-	if err := s.Put(key, "uncommitted"); !errors.Is(err, want) {
+	if err := s.Put(key, QuoteText{Text: "uncommitted"}); !errors.Is(err, want) {
 		t.Fatalf("write error=%v", err)
 	}
-	if text, ok, err := s.Get(key); text != "accepted" || !ok || err != nil {
+	if text, ok, err := s.Get(key); text.Text != "accepted" || !ok || err != nil {
 		t.Fatalf("get=%q %v %v", text, ok, err)
 	}
 	after, _ := os.ReadFile(path)
@@ -102,7 +102,7 @@ func TestQuoteStoreCorruptFileRemainsUnavailable(t *testing.T) {
 	if _, _, err := s.Get(key); err == nil || strings.Contains(err.Error(), "private text") {
 		t.Fatalf("load=%v", err)
 	}
-	if err := s.Put(key, "new"); err == nil {
+	if err := s.Put(key, QuoteText{Text: "new"}); err == nil {
 		t.Fatal("corrupt snapshot overwritten")
 	}
 	after, _ := os.ReadFile(path)
@@ -120,7 +120,7 @@ func TestQuoteStoreConcurrentWritesSurviveRestart(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			key := QuoteKey{"account", fmt.Sprint(i), "1"}
-			if err := s.Put(key, "text"); err != nil {
+			if err := s.Put(key, QuoteText{Text: "text"}); err != nil {
 				t.Error(err)
 			}
 			if _, ok, err := s.Get(key); !ok || err != nil {
@@ -140,7 +140,7 @@ func TestQuoteStoreConcurrentWritesSurviveRestart(t *testing.T) {
 func TestQuoteStoreBounds(t *testing.T) {
 	s := NewQuoteStore(filepath.Join(t.TempDir(), "quotes.json"), 0, 0)
 	key := QuoteKey{"account", "peer", "1"}
-	if err := s.Put(key, strings.Repeat("x", maxQuoteTextBytes+1)); err == nil {
+	if err := s.Put(key, QuoteText{Text: strings.Repeat("x", maxQuoteTextBytes+1)}); err == nil {
 		t.Fatal("oversized message accepted")
 	}
 	if _, err := os.Stat(s.Path()); !os.IsNotExist(err) {
@@ -160,11 +160,11 @@ func TestQuoteStoreKeepsNewWriteWhenTimestampsTie(t *testing.T) {
 	s := NewQuoteStore(filepath.Join(t.TempDir(), "quotes.json"), 0, 1)
 	s.now = func() time.Time { return time.Unix(10000, 0) }
 	for _, id := range []string{"1", "2"} {
-		if err := s.Put(QuoteKey{"account", "peer", id}, id); err != nil {
+		if err := s.Put(QuoteKey{"account", "peer", id}, QuoteText{Text: id}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if text, ok, err := s.Get(QuoteKey{"account", "peer", "2"}); text != "2" || !ok || err != nil {
+	if text, ok, err := s.Get(QuoteKey{"account", "peer", "2"}); text.Text != "2" || !ok || err != nil {
 		t.Fatalf("new write evicted: %q %v %v", text, ok, err)
 	}
 }

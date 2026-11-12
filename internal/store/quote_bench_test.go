@@ -21,7 +21,7 @@ func BenchmarkQuoteStorePut(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if err := s.Put(QuoteKey{"account", "peer", "latest"}, fmt.Sprint(i)); err != nil {
+				if err := s.Put(QuoteKey{"account", "peer", "latest"}, QuoteText{Text: fmt.Sprint(i)}); err != nil {
 					b.Fatal(err)
 				}
 			}

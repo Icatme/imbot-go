@@ -88,7 +88,7 @@ func (a *Adapter) handle(ctx context.Context, m *imbot.IncomingMessage, sink gat
 	if err == nil {
 		return imbot.AckMessage()
 	}
-	if errors.Is(err, gateway.ErrUnauthorized) || errors.Is(err, gateway.ErrUnsupported) {
+	if gateway.Consumed(err) || errors.Is(err, gateway.ErrUnsupported) {
 		return imbot.DropMessage(err)
 	}
 	return imbot.RetryMessage(err)
@@ -200,6 +200,10 @@ func (a *Adapter) normalize(m *imbot.IncomingMessage) (gateway.Event, error) {
 		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "weixin", MessageType: string(m.Type)}
 	}
 	e.MessageType = string(m.Type)
+	e.ContentKinds = nativeContentKinds(m)
+	if m.QuotedMessage != nil {
+		e.Quote.ContentKinds = nativeQuoteKinds(m.QuotedMessage)
+	}
 	a.addParts(&e, m)
 	a.replies.Put(wire.ContextKey(r, id), &saved, time.Now().Add(a.cfg.ReplyTTL))
 	return e, nil

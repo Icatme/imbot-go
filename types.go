@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Icatme/imbot-go/internal/protocol"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 // MessageID is a lossless server identifier. Both string and uint64 JSON
@@ -268,6 +269,9 @@ type QuotedMessage struct {
 	PartialText *PartialText
 	Resolution  QuoteResolution
 	Media       *QuotedMedia
+	// ContentKinds retains every known original kind, including the distinction
+	// between independent text and voice transcription in restored mixed quotes.
+	ContentKinds []receive.Kind
 }
 
 // QuotedMedia describes one referenced attachment. CDN references are present

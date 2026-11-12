@@ -13,12 +13,33 @@ imbot-go 是 Go 多 IM 机器人 SDK，提供统一 Gateway，支持微信 iLink
 ## 安装
 
 ```bash
-go get github.com/Icatme/imbot-go@v0.9.0
+go get github.com/Icatme/imbot-go@v0.9.1
 ```
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近版本（v0.9.0）：迁移到 imbot-go
+## 最近版本（v0.9.1）：接收策略与引用处理
+
+### 按 Bot 配置接收内容
+
+原生 `imbot.Options` 和 `gateway.Options` 支持 `ReceivePolicy`，不配置时默认接收平台支持的全部内容。例如关闭语音、视频，并只接收 PDF/Word/Excel 文件：
+
+```go
+ReceivePolicy: receive.Policy{
+    Disabled:       []receive.Kind{receive.Voice, receive.Video},
+    FileExtensions: []string{"pdf", "docx", "xlsx"},
+},
+```
+
+`receive` 的导入路径为 `github.com/Icatme/imbot-go/receive`。Gateway 可通过 `AccountReceivePolicies` 为每个 Bot 单独配置。策略拒收正常确认消费，不触发业务 Handler；混合内容和引用一起检查，语音转写也受语音开关约束。文件白名单是元数据筛选，实际字节仍须在显式下载后校验。完整示例见[接收策略](docs/channels/receive-policy.md)。
+
+修复微信策略拒收误重试、QQ 已消费拒收误报运行错误，以及飞书媒体别名、缓存混合引用和缺失文件元数据绕过限制的问题。Go 版本、模块路径和第三方依赖不变；已有配置默认保持全部接收。
+
+版本说明见 [v0.9.1 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.9.1)。
+
+## 历史版本
+
+### v0.9.0：迁移到 imbot-go
 
 项目由 `wechatbot-go` 更名为 `imbot-go`。Go 模块路径改为 `github.com/Icatme/imbot-go`，根包名改为 `imbot`；`gateway`、`channels/*` 和原生微信 API 的行为保持不变。
 
@@ -27,8 +48,6 @@ go get github.com/Icatme/imbot-go@v0.9.0
 历史标签保持原样，v0.8.6 及之前仍使用旧模块路径。原生微信状态继续使用已有 `~/.wechatbot` 目录及显式配置的存储路径，无需因改名重新登录。没有兼容包装包、自动状态搬迁或新的第三方依赖。
 
 版本说明见 [v0.9.0 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.9.0)。
-
-## 历史版本
 
 ### v0.8.6：修复钉钉扫码后的注册等待
 

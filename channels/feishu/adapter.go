@@ -18,6 +18,7 @@ import (
 
 	"github.com/Icatme/imbot-go/channels/internal/wire"
 	"github.com/Icatme/imbot-go/gateway"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 type Config struct {
@@ -256,6 +257,14 @@ func (a *Adapter) Decode(raw []byte) (gateway.Event, error) {
 		e.Attachments = []gateway.Attachment{{Kind: "image", Ref: c.ImageKey}}
 	case "file", "audio", "media", "sticker":
 		e.Attachments = []gateway.Attachment{{Kind: m.Type, Ref: c.FileKey, Name: c.FileName}}
+		switch m.Type {
+		case "audio":
+			e.ContentKinds = []receive.Kind{receive.Voice}
+		case "media":
+			e.ContentKinds = []receive.Kind{receive.Video}
+		case "sticker":
+			e.ContentKinds = []receive.Kind{receive.Image}
+		}
 	default:
 		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "feishu", MessageType: m.Type}
 	}

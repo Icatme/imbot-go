@@ -21,6 +21,7 @@ import (
 
 	"github.com/Icatme/imbot-go/channels/internal/wire"
 	"github.com/Icatme/imbot-go/gateway"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 type Config struct {
@@ -171,6 +172,9 @@ func (a *Adapter) Decode(raw []byte) (gateway.Event, error) {
 		}
 		e.Attachments = []gateway.Attachment{{Kind: m.Type, Ref: inboundRefPrefix + m.ID, MessageID: m.ID, Scope: &e.Route, ExpiresAt: time.Now().Add(30 * time.Minute)}}
 		e.Text = m.Recognition
+		if m.Type == "voice" {
+			e.ContentKinds = []receive.Kind{receive.Voice}
+		}
 	default:
 		return gateway.Event{}, &gateway.UnsupportedMessageError{Platform: "wecom_app", MessageType: m.Type}
 	}

@@ -54,6 +54,6 @@ type LifecycleHooks struct {
 	BeforeSend HookRegistry[*SendRequest]
 	// AfterSend observes the result of an attempted message send.
 	AfterSend HookRegistry[SendOutcome]
-	// AfterReceive runs after a message is parsed and before handlers run.
+	// AfterReceive runs after parsing and receive-policy acceptance, before handlers.
 	AfterReceive HookRegistry[*IncomingMessage]
 }

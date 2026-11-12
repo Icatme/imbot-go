@@ -10,6 +10,7 @@ import (
 
 	"github.com/Icatme/imbot-go"
 	"github.com/Icatme/imbot-go/gateway"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 type fakeClient struct {
@@ -112,10 +113,10 @@ func TestReplyRouteIsolation(t *testing.T) {
 }
 func TestAckRetryDropMapping(t *testing.T) {
 	a, _ := fixture(t)
-	for _, err := range []error{nil, gateway.ErrUnauthorized, errors.New("db down")} {
+	for _, err := range []error{nil, gateway.ErrUnauthorized, &receive.Rejection{Kind: receive.Voice}, errors.New("db down")} {
 		got := a.handle(context.Background(), incoming(), func(context.Context, gateway.Event) error { return err })
 		want := imbot.AckMessage()
-		if errors.Is(err, gateway.ErrUnauthorized) {
+		if errors.Is(err, gateway.ErrUnauthorized) || errors.Is(err, receive.ErrRejected) {
 			want = imbot.DropMessage(err)
 		} else if err != nil {
 			want = imbot.RetryMessage(err)

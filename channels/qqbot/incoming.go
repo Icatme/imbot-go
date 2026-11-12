@@ -2,12 +2,14 @@ package qqbot
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Icatme/imbot-go/channels/internal/wire"
 	"github.com/Icatme/imbot-go/gateway"
+	"github.com/Icatme/imbot-go/receive"
 )
 
 type incomingAttachment struct {
@@ -69,6 +71,7 @@ func (a *Adapter) decode(v envelope) (gateway.Event, error) {
 		e.Time = ts
 	}
 	if e.Text != "" {
+		e.ContentKinds = []receive.Kind{receive.Text}
 		e.Parts = append(e.Parts, gateway.ContentPart{Text: e.Text})
 	}
 	for i, p := range m.Attachments {
@@ -77,8 +80,10 @@ func (a *Adapter) decode(v envelope) (gateway.Event, error) {
 			return gateway.Event{}, err
 		}
 		e.Attachments = append(e.Attachments, attachment)
+		e.ContentKinds = addContentKind(e.ContentKinds, receive.Kind(attachment.Kind))
 		e.Parts = append(e.Parts, gateway.ContentPart{Attachment: &attachment})
 		if transcript := strings.TrimSpace(p.ASRText); transcript != "" {
+			e.ContentKinds = addContentKind(e.ContentKinds, receive.Voice)
 			if e.Text != "" {
 				e.Text += "\n"
 			}
@@ -94,6 +99,7 @@ func (a *Adapter) decode(v envelope) (gateway.Event, error) {
 		var text []string
 		for i, element := range m.Elements {
 			if element.Content != "" {
+				e.Quote.ContentKinds = addContentKind(e.Quote.ContentKinds, receive.Text)
 				text = append(text, element.Content)
 			}
 			for j, p := range element.Attachments {
@@ -102,7 +108,9 @@ func (a *Adapter) decode(v envelope) (gateway.Event, error) {
 					return gateway.Event{}, err
 				}
 				e.Quote.Attachments = append(e.Quote.Attachments, attachment)
+				e.Quote.ContentKinds = addContentKind(e.Quote.ContentKinds, receive.Kind(attachment.Kind))
 				if transcript := strings.TrimSpace(p.ASRText); transcript != "" {
+					e.Quote.ContentKinds = addContentKind(e.Quote.ContentKinds, receive.Voice)
 					text = append(text, transcript)
 				}
 			}
@@ -116,6 +124,13 @@ func (a *Adapter) decode(v envelope) (gateway.Event, error) {
 		return gateway.Event{}, gateway.ErrInvalidEvent
 	}
 	return e, nil
+}
+
+func addContentKind(kinds []receive.Kind, kind receive.Kind) []receive.Kind {
+	if !slices.Contains(kinds, kind) {
+		return append(kinds, kind)
+	}
+	return kinds
 }
 
 func (a *Adapter) rememberAttachment(r gateway.Route, messageID, position string, p incomingAttachment) (gateway.Attachment, error) {
