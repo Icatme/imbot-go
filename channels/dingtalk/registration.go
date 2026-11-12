@@ -132,7 +132,9 @@ func BeginRegistration(ctx context.Context, opts RegistrationOptions) (*Registra
 			return Credentials{}, false, err
 		}
 		switch strings.ToUpper(strings.TrimSpace(out.Status)) {
-		case "WAITING":
+		case "WAITING", "SCANNED":
+			// Scanning precedes authorization completion; credentials arrive only
+			// with SUCCESS. Keep the original polling interval and deadline.
 			return Credentials{}, false, nil
 		case "SUCCESS":
 			credentials := Credentials{ClientID: out.ClientID, ClientSecret: out.ClientSecret}

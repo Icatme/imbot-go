@@ -131,27 +131,31 @@ func TestRegistrationBeginWireContract(t *testing.T) {
 }
 
 func TestRegistrationWaitAndAdapterConfig(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		f := &registrationFixture{t: t, polls: []string{`{"errcode":0,"status":"WAITING"}`, `{"errcode":0,"status":"SUCCESS","client_id":"app","client_secret":"secret"}`}}
-		reg, err := BeginRegistration(context.Background(), RegistrationOptions{HTTPClient: f.client()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		start := time.Now()
-		credentials, err := reg.Wait(context.Background())
-		if err != nil || credentials.ClientID != "app" || credentials.ClientSecret != "secret" || time.Since(start) != 2*time.Second || f.pollCount != 2 {
-			t.Fatalf("registration failed: calls=%d elapsed=%s err=%v", f.pollCount, time.Since(start), err)
-		}
-		again, err := reg.Wait(context.Background())
-		if err != nil || again != credentials || f.pollCount != 2 {
-			t.Fatal("successful result was not retained")
-		}
-		cfg := credentials.Config("local-account")
-		adapter, err := New(cfg)
-		if err != nil || cfg.RobotCode != "app" || adapter.Account().ID != "local-account" {
-			t.Fatalf("credentials do not configure adapter: %v", err)
-		}
-	})
+	for _, pending := range []string{"WAITING", "SCANNED", " scanned "} {
+		t.Run(pending, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := &registrationFixture{t: t, polls: []string{fmt.Sprintf(`{"errcode":0,"status":%q}`, pending), `{"errcode":0,"status":"SUCCESS","client_id":"app","client_secret":"secret"}`}}
+				reg, err := BeginRegistration(context.Background(), RegistrationOptions{HTTPClient: f.client()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				start := time.Now()
+				credentials, err := reg.Wait(context.Background())
+				if err != nil || credentials.ClientID != "app" || credentials.ClientSecret != "secret" || time.Since(start) != 2*time.Second || f.pollCount != 2 {
+					t.Fatalf("registration failed: calls=%d elapsed=%s err=%v", f.pollCount, time.Since(start), err)
+				}
+				again, err := reg.Wait(context.Background())
+				if err != nil || again != credentials || f.pollCount != 2 {
+					t.Fatal("successful result was not retained")
+				}
+				cfg := credentials.Config("local-account")
+				adapter, err := New(cfg)
+				if err != nil || cfg.RobotCode != "app" || adapter.Account().ID != "local-account" {
+					t.Fatalf("credentials do not configure adapter: %v", err)
+				}
+			})
+		})
+	}
 }
 
 func TestRegistrationPreservesOpaqueValues(t *testing.T) {
@@ -225,7 +229,7 @@ func TestRegistrationTerminalResponses(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				f := &registrationFixture{t: t, polls: []string{tt.body}}
+				f := &registrationFixture{t: t, polls: []string{`{"errcode":0,"status":"SCANNED"}`, tt.body}}
 				reg, err := BeginRegistration(context.Background(), RegistrationOptions{HTTPClient: f.client()})
 				if err != nil {
 					t.Fatal(err)
@@ -236,7 +240,7 @@ func TestRegistrationTerminalResponses(t *testing.T) {
 						t.Fatalf("wrong terminal outcome: %v", err)
 					}
 				}
-				if f.pollCount != 1 {
+				if f.pollCount != 2 {
 					t.Fatal("terminal outcome caused another poll")
 				}
 			})
@@ -274,41 +278,58 @@ func TestRegistrationRejectsMalformedChallenge(t *testing.T) {
 }
 
 func TestRegistrationCancellationAndResume(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		f := &registrationFixture{t: t, polls: []string{`{"errcode":0,"status":"SUCCESS","client_id":"app","client_secret":"secret"}`}}
-		reg, err := BeginRegistration(context.Background(), RegistrationOptions{HTTPClient: f.client()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		done := make(chan error, 1)
-		go func() { _, err := reg.Wait(ctx); done <- err }()
-		synctest.Wait()
-		if _, err := reg.Wait(context.Background()); !errors.Is(err, onboarding.ErrConcurrentWait) {
-			t.Fatalf("concurrent Wait admitted: %v", err)
-		}
-		cancel()
-		if err := <-done; !errors.Is(err, context.Canceled) || f.pollCount != 0 {
-			t.Fatalf("canceled waiter made a request: %v", err)
-		}
-		if _, err := reg.Wait(context.Background()); err != nil || f.pollCount != 1 {
-			t.Fatalf("explicit resume failed: %v", err)
-		}
-	})
+	for _, scanned := range []bool{false, true} {
+		t.Run(fmt.Sprintf("scanned=%t", scanned), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := &registrationFixture{t: t, polls: []string{`{"errcode":0,"status":"SUCCESS","client_id":"app","client_secret":"secret"}`}}
+				wantPolls := 0
+				if scanned {
+					f.polls = append([]string{`{"errcode":0,"status":"SCANNED"}`}, f.polls...)
+					wantPolls = 1
+				}
+				reg, err := BeginRegistration(context.Background(), RegistrationOptions{HTTPClient: f.client()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				done := make(chan error, 1)
+				go func() { _, err := reg.Wait(ctx); done <- err }()
+				synctest.Wait()
+				if scanned {
+					time.Sleep(time.Second)
+					synctest.Wait()
+				}
+				if _, err := reg.Wait(context.Background()); !errors.Is(err, onboarding.ErrConcurrentWait) {
+					t.Fatalf("concurrent Wait admitted: %v", err)
+				}
+				cancel()
+				if err := <-done; !errors.Is(err, context.Canceled) || f.pollCount != wantPolls {
+					t.Fatalf("canceled waiter made a request: %v", err)
+				}
+				if _, err := reg.Wait(context.Background()); err != nil || f.pollCount != wantPolls+1 {
+					t.Fatalf("explicit resume failed: %v", err)
+				}
+			})
+		})
+	}
 }
 
 func TestRegistrationServerDeadline(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		f := &registrationFixture{t: t, begin: `{"errcode":0,"device_code":"private-device-code","verification_uri_complete":"https://login.dingtalk.com/auth","expires_in":2,"interval":1}`, polls: []string{`{"errcode":0,"status":"WAITING"}`}}
-		reg, err := BeginRegistration(context.Background(), RegistrationOptions{HTTPClient: f.client()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		start := time.Now()
-		if _, err := reg.Wait(context.Background()); !errors.Is(err, onboarding.ErrExpired) || time.Since(start) != 2*time.Second || f.pollCount != 1 {
-			t.Fatalf("server deadline not enforced: polls=%d err=%v", f.pollCount, err)
-		}
-	})
+	for _, pending := range []string{"WAITING", "SCANNED"} {
+		t.Run(pending, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := &registrationFixture{t: t, begin: `{"errcode":0,"device_code":"private-device-code","verification_uri_complete":"https://login.dingtalk.com/auth","expires_in":2,"interval":1}`, polls: []string{fmt.Sprintf(`{"errcode":0,"status":%q}`, pending)}}
+				reg, err := BeginRegistration(context.Background(), RegistrationOptions{HTTPClient: f.client()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				start := time.Now()
+				if _, err := reg.Wait(context.Background()); !errors.Is(err, onboarding.ErrExpired) || time.Since(start) != 2*time.Second || f.pollCount != 1 {
+					t.Fatalf("server deadline not enforced: polls=%d err=%v", f.pollCount, err)
+				}
+			})
+		})
+	}
 }
 
 func TestRegistrationPollErrorDoesNotRetryOrLeak(t *testing.T) {

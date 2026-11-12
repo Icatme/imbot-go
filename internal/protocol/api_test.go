@@ -16,8 +16,8 @@ import (
 )
 
 func TestChannelVersionBumped(t *testing.T) {
-	if ChannelVersion != "0.8.5" {
-		t.Fatalf("expected ChannelVersion 0.8.5, got %s", ChannelVersion)
+	if ChannelVersion != "0.8.6" {
+		t.Fatalf("expected ChannelVersion 0.8.6, got %s", ChannelVersion)
 	}
 }
 

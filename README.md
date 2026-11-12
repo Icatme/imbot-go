@@ -18,7 +18,17 @@ go get github.com/Icatme/wechatbot-go
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近版本（v0.8.5）：消息与媒体协议修复
+## 最近版本（v0.8.6）：修复钉钉扫码后的注册等待
+
+- 钉钉返回 `SCANNED` 时继续等待授权，不再误报 `onboarding: invalid registration response`；仅在 `SUCCESS` 且凭据完整时返回成功。
+- 保留服务端轮询间隔、有效期和取消能力；拒绝、过期、未知状态及不完整成功响应仍明确失败。
+- 扩展已有注册契约，覆盖扫码后成功、拒绝、过期、取消和显式恢复。Go 1.25+、module path 与第三方依赖不变。
+
+完整版本说明见 [v0.8.6 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.6)。真实账号与 UI 验收由使用者完成。
+
+## 历史版本
+
+### v0.8.5：消息与媒体协议修复
 
 - 完善多通道富文本、附件上传下载、引用与卡片事件处理，保留消息顺序和长文本/批量发送的部分成功结果。
 - 修复媒体资源跨路由复用、过期校验及微信跨 Bot 会话复用；发送 hook 不再污染原消息或缓存资源。
@@ -27,8 +37,6 @@ go get github.com/Icatme/wechatbot-go
 仍要求 Go 1.25+，module path 和第三方依赖不变。钉钉出站媒体、自动转码、持久 inbox/outbox 与跨副本账号租约不在当前支持范围；真实账号与 UI 验收由使用者完成。
 
 接口与限制见[消息与媒体契约](docs/channels/media.md)、[能力矩阵](docs/channels/capabilities.md)和[多通道接入](docs/channels/README.md)。完整版本说明见 [v0.8.5 Release](https://github.com/Icatme/wechatbot-go/releases/tag/v0.8.5)。
-
-## 历史版本
 
 ### v0.8.0：多通道 Gateway 与扫码注册
 

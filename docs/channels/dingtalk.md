@@ -33,6 +33,6 @@ if err != nil { return err }
 
 Challenge 提供授权链接、用户码、到期时间和轮询间隔，隐藏 device_code。宿主负责二维码显示和凭据安全存储；库不会写 `.env`、覆盖已有账号或自动启动适配器。Credentials.Config 将 ClientID 同时用于 RobotCode，与[官方主动发送实现](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/src/services/messaging.ts)一致；Gateway 用户授权仍需单独配置。
 
-Wait 遵守服务端间隔与有效期，支持 context 取消，并拒绝同时轮询同一注册会话。仅在服务端省略字段时使用官方客户端的 7200 秒有效期、3 秒间隔默认值；显式 null、非正数、溢出或无效格式直接报错。FAIL、EXPIRED、未知状态或缺失成功凭据立即结束，不照搬参考客户端对这些状态继续等待两分钟的行为。网络/HTTP 错误直接返回；调用方可以在有效期内显式再次 Wait，成功和终止结果不会重复轮询。
+Wait 遵守服务端间隔与有效期，支持 context 取消，并拒绝同时轮询同一注册会话。WAITING 与 SCANNED 均继续等待；SCANNED 表示手机已扫码，不代表授权完成，也不要求此时返回凭据。只有 SUCCESS 且凭据完整时才成功返回。SCANNED 来自 2026-11-12 宿主实际扫码的脱敏响应（HTTP 200、errcode=0、无 client_id/client_secret），旧实现错误地将它视为无效响应。仅在服务端省略字段时使用官方客户端的 7200 秒有效期、3 秒间隔默认值；显式 null、非正数、溢出或无效格式直接报错。FAIL、EXPIRED、未知状态或缺失成功凭据立即结束，不照搬参考客户端对这些状态继续等待两分钟的行为。网络/HTTP 错误直接返回；调用方可以在有效期内显式再次 Wait，成功和终止结果不会重复轮询。
 
 协议对照：[官方 device-auth.ts](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/src/device-auth.ts)（2026-11-12）。本地回归覆盖 HTTP 请求契约、默认/自定义 Source、待确认到成功、凭据接入适配器、取消/并发轮询/过期、畸形响应、错误脱敏及禁重定向；未执行真实钉钉扫码创建或授权。
