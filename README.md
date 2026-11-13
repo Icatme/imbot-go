@@ -13,14 +13,26 @@ imbot-go 是 Go 多 IM 机器人 SDK，提供统一 Gateway，支持微信 iLink
 ## 安装
 
 ```bash
-go get github.com/Icatme/imbot-go@v0.9.1
+go get github.com/Icatme/imbot-go@v0.9.2
 ```
 
 要求 Go 1.25+，零 CGO 依赖。
 
-## 最近版本（v0.9.1）：接收策略与引用处理
+## 最近版本（v0.9.2）：飞书互动卡片使用文档
 
-### 按 Bot 配置接收内容
+- 补充互动卡片发送、按钮参数回传及业务 Handler 接入示例。
+- 明确默认长连接无需公网回调地址，应用仍需订阅 `card.action.trigger`；可选 Webhook 模式由宿主提供 HTTPS 入口。
+- 说明发送与接收共用 Adapter、30 分钟路由缓存、回调处理期限及卡片更新边界。
+
+本次为文档与版本元数据更新，没有新增运行时功能。Go 版本、模块路径和依赖保持不变。
+
+[互动卡片使用指南](docs/channels/feishu-cards.md) · [v0.9.2 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.9.2)
+
+## 历史版本
+
+### v0.9.1：接收策略与引用处理
+
+#### 按 Bot 配置接收内容
 
 原生 `imbot.Options` 和 `gateway.Options` 支持 `ReceivePolicy`，不配置时默认接收平台支持的全部内容。例如关闭语音、视频，并只接收 PDF/Word/Excel 文件：
 
@@ -38,8 +50,6 @@ ReceivePolicy: receive.Policy{
 修复微信策略拒收误重试、QQ 已消费拒收误报运行错误，以及飞书媒体别名、缓存混合引用和缺失文件元数据绕过限制的问题。Go 版本、模块路径和第三方依赖不变；已有配置默认保持全部接收。
 
 版本说明见 [v0.9.1 Release](https://github.com/Icatme/imbot-go/releases/tag/v0.9.1)。
-
-## 历史版本
 
 ### v0.9.0：迁移到 imbot-go
 

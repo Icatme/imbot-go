@@ -174,3 +174,9 @@
 - Validation: compiled the complete documentation Go example against the current module without executing it, parsed the sample callback JSON, checked 33 relative documentation links and git diff --check. Documentation-only change; no SDK implementation, dependencies, version, tests, live IM traffic, UI acceptance, commit, push or release changes.
 
 - User subsequently authorized committing and pushing the documentation to main. Reused the example compilation, JSON and link checks; staged whitespace checks passed. This documentation-only commit uses [skip ci]; no version bump, new tag or Release is included.
+
+## 2026-11-13 - v0.9.2 release
+
+- User requested the next patch release. Prepared v0.9.2 with the already-pushed Feishu interactive-card guide and its documentation links; no new runtime feature or protocol behavior. Updated installation/version references, roadmap, protocol development fallback and the existing version assertion. Module path, dependencies and go.sum remain unchanged.
+- TestChannelVersionBumped and TestBuildClientVersion passed. Reused the prior documentation example compilation, callback JSON parsing and 33 local-link checks; formatting and whitespace checks passed. No repeated full/race suites, real-account traffic or UI acceptance. Release commit uses [skip ci].
+- Publication scope is main, a new annotated v0.9.2 tag and GitHub Release metadata. No compiled binaries, custom archives, extra checksums or downstream repository changes.

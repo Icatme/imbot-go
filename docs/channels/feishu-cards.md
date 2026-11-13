@@ -1,6 +1,6 @@
 # 飞书互动卡片：发送按钮与接收操作
 
-适用于 imbot-go v0.9.1 的 `channels/feishu` + `gateway`。卡片通过 `gateway.Message.Card` 发送，按钮点击以 `Event.Interaction` 进入业务 Handler。普通 `post` 富文本或 `Format: "markdown"` 不会自动生成回传按钮。
+适用于 imbot-go v0.9.2 的 `channels/feishu` + `gateway`，所述卡片能力沿用 v0.9.1。卡片通过 `gateway.Message.Card` 发送，按钮点击以 `Event.Interaction` 进入业务 Handler。普通 `post` 富文本或 `Format: "markdown"` 不会自动生成回传按钮。
 
 ## 是否需要回调链接
 
